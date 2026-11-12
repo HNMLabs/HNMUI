@@ -130,7 +130,7 @@ class InstalledAppsRepository(
                 if (iconCache.get(key.stableId) == null) {
                     runCatching {
                         val density = context.resources.displayMetrics.densityDpi
-                        val drawable = info.getBadgedIcon(density)
+                        val drawable = info.getIcon(density) ?: info.getBadgedIcon(density)
                         iconCache.put(key.stableId, drawableToImageBitmap(drawable))
                     }
                 }
@@ -162,7 +162,8 @@ class InstalledAppsRepository(
                 ?: return@withContext null
 
             runCatching {
-                val drawable = match.getBadgedIcon(context.resources.displayMetrics.densityDpi)
+                val density = context.resources.displayMetrics.densityDpi
+                val drawable = match.getIcon(density) ?: match.getBadgedIcon(density)
                 drawableToImageBitmap(drawable).also { iconCache.put(key.stableId, it) }
             }.getOrNull()
         }
@@ -250,13 +251,27 @@ class InstalledAppsRepository(
         }
     }
 
-    private fun drawableToImageBitmap(drawable: Drawable, targetPx: Int = 192): ImageBitmap {
-        val width = drawable.intrinsicWidth.takeIf { it > 0 }?.coerceAtMost(targetPx) ?: targetPx
-        val height = drawable.intrinsicHeight.takeIf { it > 0 }?.coerceAtMost(targetPx) ?: targetPx
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    private fun drawableToImageBitmap(drawable: Drawable, targetPx: Int = 180): ImageBitmap {
+        val bitmap = Bitmap.createBitmap(targetPx, targetPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        drawable.setBounds(0, 0, canvas.width, canvas.height)
-        drawable.draw(canvas)
+
+        if (drawable is android.graphics.drawable.AdaptiveIconDrawable) {
+            val bleed = (targetPx * android.graphics.drawable.AdaptiveIconDrawable.getExtraInsetFraction() * 0.65f).toInt()
+            drawable.background?.let { bg ->
+                bg.setBounds(-bleed, -bleed, targetPx + bleed, targetPx + bleed)
+                bg.draw(canvas)
+            }
+            drawable.foreground?.let { fg ->
+                fg.setBounds(-bleed, -bleed, targetPx + bleed, targetPx + bleed)
+                fg.draw(canvas)
+            }
+        } else {
+            drawable.setBounds(0, 0, targetPx, targetPx)
+            drawable.draw(canvas)
+        }
+
+        // 120 FPS akıcılığı için dokuyu arka plan iş parçacığında GPU belleğine hazırla
+        bitmap.prepareToDraw()
         return bitmap.asImageBitmap()
     }
 }

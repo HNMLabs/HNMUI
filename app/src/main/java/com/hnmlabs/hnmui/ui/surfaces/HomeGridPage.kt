@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.Icon
@@ -66,9 +67,11 @@ import com.hnmlabs.hnmui.ui.theme.HnmPalette
 fun HomeGridPage(
     page: ResolvedHomePage,
     gridSpec: LauncherGridSpec,
+    isDefaultLauncher: Boolean,
     isEditMode: Boolean,
     cachedIconProvider: (AppComponentKey) -> ImageBitmap?,
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?,
+    onRequestDefaultLauncher: () -> Unit,
     onAppClick: (AppItem) -> Unit,
     onAppLongPress: (AppItem) -> Unit,
     onRemoveAppFromHome: (AppComponentKey) -> Unit,
@@ -115,6 +118,50 @@ fun HomeGridPage(
                 bottom = 148.dp
             )
     ) {
+        // HNMUI henüz varsayılan Ana Ekran değilse doğrudan ana sayfada tek dokunuşlu kurulum çubuğu göster
+        AnimatedVisibility(
+            visible = !isDefaultLauncher && !isEditMode,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            GlassSurface(
+                shape = RoundedCornerShape(20.dp),
+                tone = GlassTone.CARD,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp)
+                    .clickable(onClick = onRequestDefaultLauncher)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Home,
+                        contentDescription = null,
+                        tint = HnmPalette.AccentCyan,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Ana Ekran tuşunu kilitlemek için varsayılan yap",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(HnmPalette.AccentBlue)
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(text = "Ayarla", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+
         // Düzenleme modu üst aksiyon çubuğu (Duvar kağıdı seçimi & Bitti hapı)
         AnimatedVisibility(
             visible = isEditMode,

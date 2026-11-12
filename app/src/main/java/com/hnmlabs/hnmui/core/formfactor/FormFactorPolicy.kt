@@ -1,11 +1,13 @@
 package com.hnmlabs.hnmui.core.formfactor
 
 import android.content.pm.ActivityInfo
+import androidx.compose.runtime.Immutable
 
 /**
  * HNMUI özellik bayrakları.
  * İlk aşamada telefon deneyimine odaklanılır; tablet düzeni mimaride rezerve tutulur.
  */
+@Immutable
 data class LauncherFeatureFlags(
     val enableTabletLayout: Boolean = false
 )
@@ -20,6 +22,7 @@ enum class DeviceProfile {
  * Bu sayede UI bileşenleri sabit sayılara bağımlı kalmaz ve tablet modu açıldığında
  * hiçbir ekran yeniden yazılmadan geniş ızgaraya adapte olur.
  */
+@Immutable
 data class LauncherGridSpec(
     val profile: DeviceProfile,
     val isTabletHardwareDetected: Boolean,

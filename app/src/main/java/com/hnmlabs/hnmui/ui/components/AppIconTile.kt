@@ -13,7 +13,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -45,7 +44,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -66,7 +64,7 @@ import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
 
 /**
- * Squircle maskeli, yay tepkili, bildirim rozetli (badge) ve düzenleme (jiggle) modlu
+ * Squircle maskeli, yay tepkili, bildirim rozetli (badge) ve 120 FPS optimize
  * HNMUI uygulama ikonu bileşeni.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -192,6 +190,10 @@ fun AppIconTile(
     }
 }
 
+/**
+ * İkon görselini arkasında herhangi bir koyu kutu veya yapay gölge izi olmadan
+ * doğrudan pürüzsüz Squircle formunda çizer.
+ */
 @Composable
 fun AppSquircleArtwork(
     label: String,
@@ -199,27 +201,27 @@ fun AppSquircleArtwork(
     size: Dp,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .size(size)
-            .shadow(6.dp, SquircleShape.Icon, clip = false)
-            .clip(SquircleShape.Icon)
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(Color(0xFF1E293B), Color(0xFF334155))
-                )
-            )
-            .border(0.6.dp, Color(0x2EFFFFFF), SquircleShape.Icon),
-        contentAlignment = Alignment.Center
-    ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap,
-                contentDescription = label,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = label,
+            contentScale = ContentScale.Crop,
+            modifier = modifier
+                .size(size)
+                .clip(SquircleShape.Icon)
+        )
+    } else {
+        Box(
+            modifier = modifier
+                .size(size)
+                .clip(SquircleShape.Icon)
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(Color(0xFF1E293B), Color(0xFF334155))
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
             Text(
                 text = label.take(1).uppercase(),
                 color = Color.White,
@@ -278,8 +280,7 @@ fun FolderIconTile(
             GlassSurface(
                 modifier = Modifier.size(iconSize),
                 shape = SquircleShape.Icon,
-                tone = GlassTone.DOCK,
-                shadowElevation = 6.dp
+                tone = GlassTone.DOCK
             ) {
                 val previewApps = folder.apps.take(4)
                 val miniSize = (iconSize - 18.dp) / 2
@@ -372,7 +373,6 @@ fun NotificationBadgePill(
         Box(
             modifier = Modifier
                 .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
-                .shadow(4.dp, RoundedCornerShape(10.dp))
                 .clip(RoundedCornerShape(10.dp))
                 .background(HnmPalette.BadgeRed)
                 .padding(horizontal = 5.dp, vertical = 1.dp),

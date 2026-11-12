@@ -8,7 +8,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -25,15 +24,17 @@ enum class GlassTone {
 
 /**
  * HNMUI Buzlu Cam (Frosted Glass) yüzeyi.
- * Üst kenarda ince optik ışık kırılması (specular highlight) ve yarı saydam katmanlı
- * gradyan ile hem açık hem koyu duvar kağıtları üzerinde derinlik hissi oluşturur.
+ * Not: Yarı saydam yüzeylerde Android HWUI Modifier.shadow iç bölgede koyu bir dikdörtgen
+ * (inner umbra) izi bıraktığı ve 120 FPS GPU akıcılığını düşürdüğü için donanım gölgesi
+ * kullanılmaz; derinlik tamamen pürüzsüz cam gradyanı ve optik kenar ışıltısıyla sağlanır.
  */
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun GlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(28.dp),
     tone: GlassTone = GlassTone.CARD,
-    shadowElevation: Dp = 10.dp,
+    shadowElevation: Dp = 0.dp,
     content: @Composable BoxScope.() -> Unit
 ) {
     val fillBrush = when (tone) {
@@ -41,13 +42,13 @@ fun GlassSurface(
             colors = listOf(HnmPalette.GlassDockFillTop, HnmPalette.GlassDockFillBottom)
         )
         GlassTone.CARD -> Brush.verticalGradient(
-            colors = listOf(HnmPalette.GlassCardFillTop, HnmPalette.GlassCardFillBottom)
+            colors = listOf(Color(0x70162032), Color(0x5C0F172A))
         )
         GlassTone.ELEVATED_MODAL -> Brush.verticalGradient(
-            colors = listOf(Color(0xCC1E293B), Color(0xBF0F172A))
+            colors = listOf(Color(0xE01E293B), Color(0xD90F172A))
         )
         GlassTone.PILL -> Brush.verticalGradient(
-            colors = listOf(Color(0x47FFFFFF), Color(0x29CBD5E1))
+            colors = listOf(Color(0x42FFFFFF), Color(0x28CBD5E1))
         )
     }
 
@@ -55,18 +56,12 @@ fun GlassSurface(
         colors = listOf(
             HnmPalette.SpecularHighlight,
             HnmPalette.SubtleBorder,
-            Color(0x14FFFFFF)
+            Color(0x16FFFFFF)
         )
     )
 
     Box(
         modifier = modifier
-            .shadow(
-                elevation = shadowElevation,
-                shape = shape,
-                ambientColor = Color(0x55000000),
-                spotColor = Color(0x66000000)
-            )
             .clip(shape)
             .background(brush = fillBrush, shape = shape)
             .border(width = 1.dp, brush = borderBrush, shape = shape),

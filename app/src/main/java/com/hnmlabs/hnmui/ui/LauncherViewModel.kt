@@ -51,6 +51,7 @@ data class LauncherOverlayState(
     val openFolderModal: ActiveFolderModal? = null,
     val quickMenu: ActiveQuickMenu? = null,
     val smallestScreenWidthDp: Int = 392,
+    val targetRefreshRateHz: Int = 120,
     val isDefaultLauncher: Boolean = false,
     val isNotificationAccessEnabled: Boolean = false
 )
@@ -72,6 +73,7 @@ data class LauncherUiState(
     val isEditMode: Boolean,
     val openFolderModal: ActiveFolderModal?,
     val quickMenu: ActiveQuickMenu?,
+    val targetRefreshRateHz: Int,
     val isDefaultLauncher: Boolean,
     val isNotificationAccessEnabled: Boolean
 )
@@ -210,6 +212,7 @@ class LauncherViewModel(
             isEditMode = overlays.isEditMode,
             openFolderModal = syncedFolderModal,
             quickMenu = overlays.quickMenu,
+            targetRefreshRateHz = overlays.targetRefreshRateHz,
             isDefaultLauncher = overlays.isDefaultLauncher,
             isNotificationAccessEnabled = overlays.isNotificationAccessEnabled
         )
@@ -233,6 +236,7 @@ class LauncherViewModel(
             isEditMode = false,
             openFolderModal = null,
             quickMenu = null,
+            targetRefreshRateHz = 120,
             isDefaultLauncher = false,
             isNotificationAccessEnabled = false
         )
@@ -240,12 +244,14 @@ class LauncherViewModel(
 
     fun updateDeviceAndPermissionStatus(
         smallestScreenWidthDp: Int,
+        targetRefreshRateHz: Int,
         isDefaultLauncher: Boolean,
         isNotificationAccessEnabled: Boolean
     ) {
         overlayState.update {
             it.copy(
                 smallestScreenWidthDp = smallestScreenWidthDp,
+                targetRefreshRateHz = targetRefreshRateHz,
                 isDefaultLauncher = isDefaultLauncher,
                 isNotificationAccessEnabled = isNotificationAccessEnabled
             )

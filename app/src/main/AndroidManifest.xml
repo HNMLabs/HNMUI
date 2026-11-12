@@ -6,13 +6,17 @@
 
     <!--
       Android 11+ Paket Görünürlüğü (<queries>):
-      QUERY_ALL_PACKAGES gibi yüksek riskli izinler istemeden, cihazdaki tüm başlatılabilir
-      uygulamaları (MAIN + LAUNCHER) standart ve güvenli biçimde listelemeyi sağlar.
+      QUERY_ALL_PACKAGES istemeden tüm başlatılabilir uygulamaları (LAUNCHER)
+      ve mevcut varsayılan ana ekran bilgisini (HOME) güvenli biçimde sorgular.
     -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
         </intent>
     </queries>
 
@@ -34,7 +38,6 @@
             android:launchMode="singleTask"
             android:resumeWhilePausing="true"
             android:stateNotNeeded="true"
-            android:taskAffinity=""
             android:windowSoftInputMode="adjustNothing">
 
             <!-- Cihazda varsayılan Ana Ekran (Home Launcher) olarak seçilebilmesini sağlar -->
@@ -45,7 +48,7 @@
                 <category android:name="android.intent.category.MONKEY" />
             </intent-filter>
 
-            <!-- Uygulama menüsünden de doğrudan test/önizleme amacıyla açılabilmesini sağlar -->
+            <!-- Uygulama menüsünden de doğrudan açılabilmesini sağlar -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

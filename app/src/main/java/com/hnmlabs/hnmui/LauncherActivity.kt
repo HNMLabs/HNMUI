@@ -13,14 +13,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import com.hnmlabs.hnmui.core.formfactor.FormFactorPolicy
 import com.hnmlabs.hnmui.core.system.DefaultLauncherHelper
+import com.hnmlabs.hnmui.core.system.HighRefreshRateHelper
 import com.hnmlabs.hnmui.ui.LauncherScreen
 import com.hnmlabs.hnmui.ui.LauncherViewModel
 import com.hnmlabs.hnmui.ui.theme.HnmLauncherTheme
 
 /**
  * HNMUI Ana Ekran (CATEGORY_HOME) Aktivitesi.
- * Duvar kağıdı destekli tam ekran uçtan uca (edge-to-edge) pencere kurar,
- * telefon profilinde dikey yönelimi kilitler ve Widget / Varsayılan Launcher izin akışlarını yönetir.
+ * 120Hz yüksek yenileme hızı kilidi, duvar kağıdı destekli uçtan uca pencere
+ * ve varsayılan Ana Ekran (RoleManager.ROLE_HOME) geçiş akışını yönetir.
  */
 class LauncherActivity : ComponentActivity() {
 
@@ -36,11 +37,22 @@ class LauncherActivity : ComponentActivity() {
     }
 
     private var pendingAppWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID
+    private var explicitUserRoleTap: Boolean = false
 
     private val defaultLauncherRoleLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) {
+    ) { result ->
+        val wasExplicitTap = explicitUserRoleTap
+        explicitUserRoleTap = false
         syncDeviceAndPermissionState()
+
+        // Kullanıcı butona dokunduğu halde sistem penceresi bastırıldıysa doğrudan Ana Ekran Ayarları'nı aç
+        if (wasExplicitTap &&
+            result.resultCode != Activity.RESULT_OK &&
+            !DefaultLauncherHelper.isDefaultLauncher(this)
+        ) {
+            DefaultLauncherHelper.openHomeSettings(this)
+        }
     }
 
     private val pickWidgetLauncher = registerForActivityResult(
@@ -95,7 +107,17 @@ class LauncherActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
 
+        HighRefreshRateHelper.enableMaxRefreshRate(this)
         syncDeviceAndPermissionState()
+
+        // İlk açılışta HNMUI henüz varsayılan Ana Ekran değilse sistem seçim penceresini otomatik sun
+        if (savedInstanceState == null &&
+            !app.hasAutoPromptedDefaultRole &&
+            !DefaultLauncherHelper.isDefaultLauncher(this)
+        ) {
+            app.hasAutoPromptedDefaultRole = true
+            promptDefaultLauncherRole(isExplicitTap = false)
+        }
 
         setContent {
             HnmLauncherTheme {
@@ -103,8 +125,7 @@ class LauncherActivity : ComponentActivity() {
                     viewModel = viewModel,
                     widgetHostManager = app.widgetHostManager,
                     onRequestDefaultLauncher = {
-                        val intent = DefaultLauncherHelper.createRequestDefaultLauncherIntent(this)
-                        runCatching { defaultLauncherRoleLauncher.launch(intent) }
+                        promptDefaultLauncherRole(isExplicitTap = true)
                     },
                     onRequestPickWidget = {
                         val id = app.widgetHostManager.allocateWidgetId()
@@ -132,6 +153,7 @@ class LauncherActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        HighRefreshRateHelper.enableMaxRefreshRate(this)
         syncDeviceAndPermissionState()
         app.installedAppsRepository.refreshAppsAsync()
     }
@@ -143,14 +165,31 @@ class LauncherActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         if (intent.hasCategory(Intent.CATEGORY_HOME) || intent.action == Intent.ACTION_MAIN) {
             viewModel.onHomeIntentReceived()
         }
     }
 
+    private fun promptDefaultLauncherRole(isExplicitTap: Boolean) {
+        val roleIntent = DefaultLauncherHelper.createRoleRequestIntentOrNull(this)
+        if (roleIntent != null) {
+            explicitUserRoleTap = isExplicitTap
+            runCatching { defaultLauncherRoleLauncher.launch(roleIntent) }
+                .onFailure {
+                    explicitUserRoleTap = false
+                    if (isExplicitTap) DefaultLauncherHelper.openHomeSettings(this)
+                }
+        } else if (isExplicitTap) {
+            DefaultLauncherHelper.openHomeSettings(this)
+        }
+    }
+
     private fun syncDeviceAndPermissionState() {
+        val hz = HighRefreshRateHelper.enableMaxRefreshRate(this)
         viewModel.updateDeviceAndPermissionStatus(
             smallestScreenWidthDp = resources.configuration.smallestScreenWidthDp,
+            targetRefreshRateHz = hz,
             isDefaultLauncher = DefaultLauncherHelper.isDefaultLauncher(this),
             isNotificationAccessEnabled = DefaultLauncherHelper.isNotificationAccessEnabled(this)
         )

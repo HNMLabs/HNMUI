@@ -12,13 +12,14 @@
   3. **En Sağ — Uygulama Arşivi (`App Library`):** Yüklü uygulamaları *Önerilenler*, *Son Eklenenler*, *Sosyal*, *Üretkenlik ve Finans*, *Eğlence ve Medya*, *Araçlar ve Sistem* ve *Oyunlar* başlıkları altında otomatik gruplar; 3 doğrudan ikon + `2x2` genişleyen küme ergonomisi ve A–Z filtreleme sunar.
 - **Aşağı Kaydırınca Açılan Spotlight Arama:** Ana ekranda parmağınızı aşağı kaydırdığınızda veya *Ara* hapına dokunduğunuzda uygulama, öneri, sistem ayarları ve web araması anında açılır.
 - **Canlı Bildirim Rozetleri & Haptic Touch Menüsü:** `NotificationListenerService` ile sıfır-polling bildirim sayaçları ve ikona uzun basıldığında Android `LauncherApps` dinamik uygulama kısayolları + klasörleme eylemleri.
+- **120 FPS / Yüksek Yenileme Hızı Desteği:** `HighRefreshRateHelper` ile 90Hz / 120Hz / 144Hz ekran modlarını kilitler, Android 15 (API 35) 60Hz güç kısıtlamasını kapatır ve ikon dokularını arka planda GPU belleğine hazırlar (`prepareToDraw`).
 - **Telefon Odaklı, Tablet Rezerve Mimari:** İlk aşamada telefon dikey ergonomisi aktiftir; `FormFactorPolicy` içinde `6x5` tablet ızgara profili rezerve olarak hazır tutulur.
 
 ## Teknoloji Yığını
 
 - **Dil & UI:** Kotlin 2.0, Jetpack Compose (Material 3 + özel `GlassSurface` / `SquircleShape` tasarım sistemi)
 - **Durum Yönetimi & Kalıcılık:** Coroutines `StateFlow` (UDF), Jetpack DataStore Preferences + `kotlinx.serialization`
-- **Android Sistem Köprüleri:** `LauncherApps`, `NotificationListenerService`, `AppWidgetHost`, `RoleManager` (`ROLE_HOME`)
+- **Android Sistem Köprüleri:** `LauncherApps`, `NotificationListenerService`, `AppWidgetHost`, `RoleManager` (`ROLE_HOME`), `HighRefreshRateHelper`
 - **Hedef Sürümler:** `minSdk = 28` (Android 9+), `targetSdk = 35` (Android 15)
 
 ## Derleme ve Çalıştırma
@@ -26,6 +27,6 @@
 Projeyi Android Studio (Ladybug veya üzeri) ile doğrudan açabilir ya da komut satırından derleyebilirsiniz:
 
 ```bash
-./gradlew assembleDebug
-./gradlew testDebugUnitTest
+./gradlew assembleSideloadRelease
+./gradlew testSideloadDebugUnitTest
 ```

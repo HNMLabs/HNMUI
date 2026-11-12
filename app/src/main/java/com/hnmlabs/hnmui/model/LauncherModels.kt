@@ -1,11 +1,13 @@
 package com.hnmlabs.hnmui.model
 
+import androidx.compose.runtime.Immutable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
  * Bir Android aktivitesini çoklu kullanıcı profiliyle birlikte benzersiz tanımlayan anahtar.
  */
+@Immutable
 @Serializable
 data class AppComponentKey(
     val packageName: String,
@@ -32,6 +34,7 @@ enum class AppCategory(val titleTr: String) {
 /**
  * Çalışma zamanında Launcher içinde gösterilen uygulama modeli.
  */
+@Immutable
 data class AppItem(
     val key: AppComponentKey,
     val label: String,
@@ -44,6 +47,7 @@ data class AppItem(
 /**
  * İkona uzun basıldığında (Haptic Touch) veya Spotlight aramasında gösterilen kısayol modeli.
  */
+@Immutable
 data class AppShortcutItem(
     val id: String,
     val packageName: String,

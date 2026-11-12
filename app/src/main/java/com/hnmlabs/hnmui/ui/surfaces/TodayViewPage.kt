@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -35,8 +36,6 @@ import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,6 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -65,7 +66,6 @@ import com.hnmlabs.hnmui.widget.LauncherWidgetHostManager
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import androidx.compose.ui.graphics.ImageBitmap
 
 /**
  * En soldaki sayfa (Sayfa 0): Today View / Özet & Widget Ekranı.
@@ -77,6 +77,7 @@ fun TodayViewPage(
     isDefaultLauncher: Boolean,
     isNotificationAccessEnabled: Boolean,
     isTabletHardwareDetected: Boolean,
+    targetRefreshRateHz: Int,
     suggestedApps: List<AppItem>,
     installedAppCount: Int,
     totalUnreadBadges: Int,
@@ -222,7 +223,11 @@ fun TodayViewPage(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (batteryInfo.second) "Şarj oluyor" else "Pil dostu mod",
+                            text = if (batteryInfo.second) {
+                                "Şarj oluyor • ${targetRefreshRateHz} Hz"
+                            } else {
+                                "${targetRefreshRateHz} Hz akıcı mod"
+                            },
                             style = MaterialTheme.typography.labelMedium,
                             color = HnmPalette.TextMuted
                         )
@@ -339,38 +344,45 @@ fun TodayViewPage(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedTextField(
-                            value = noteDraft,
-                            onValueChange = { noteDraft = it },
-                            placeholder = {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0x1FFFFFFF))
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            if (noteDraft.isEmpty()) {
                                 Text(
                                     text = "Yeni not veya hatırlatma ekle...",
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = HnmPalette.TextMuted
                                 )
-                            },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(
-                                onDone = {
-                                    if (noteDraft.isNotBlank()) {
-                                        onAddQuickNote(noteDraft)
-                                        noteDraft = ""
+                            }
+                            BasicTextField(
+                                value = noteDraft,
+                                onValueChange = { noteDraft = it },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    color = Color.White
+                                ),
+                                cursorBrush = SolidColor(HnmPalette.AccentCyan),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        if (noteDraft.isNotBlank()) {
+                                            onAddQuickNote(noteDraft)
+                                            noteDraft = ""
+                                        }
                                     }
-                                }
-                            ),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = HnmPalette.AccentCyan,
-                                unfocusedBorderColor = HnmPalette.SubtleBorder,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.weight(1f)
-                        )
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
 
                         Box(
                             modifier = Modifier
-                                .size(46.dp)
+                                .size(42.dp)
                                 .clip(CircleShape)
                                 .background(HnmPalette.AccentBlue)
                                 .clickable {
@@ -498,8 +510,7 @@ fun TodayViewPage(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(18.dp))
-                                    .background(Color(0x22000000))
-                                    .padding(8.dp)
+                                    .padding(vertical = 4.dp)
                             ) {
                                 AndroidView(
                                     factory = { ctx ->

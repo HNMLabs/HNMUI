@@ -17,6 +17,13 @@ import androidx.core.app.NotificationManagerCompat
 object DefaultLauncherHelper {
 
     fun isDefaultLauncher(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = context.getSystemService(RoleManager::class.java)
+            if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_HOME)) {
+                return roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+            }
+        }
+
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
         }
@@ -32,7 +39,11 @@ object DefaultLauncherHelper {
         return resolveInfo?.activityInfo?.packageName == context.packageName
     }
 
-    fun createRequestDefaultLauncherIntent(context: Context): Intent {
+    /**
+     * ActivityResultLauncher ile başlatılmaya uygun (FLAG_ACTIVITY_NEW_TASK içermeyen)
+     * RoleManager.ROLE_HOME istemi oluşturur; desteklenmiyorsa null döner.
+     */
+    fun createRoleRequestIntentOrNull(context: Context): Intent? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = context.getSystemService(RoleManager::class.java)
             if (roleManager != null &&
@@ -42,8 +53,22 @@ object DefaultLauncherHelper {
                 return roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
             }
         }
-        return Intent(Settings.ACTION_HOME_SETTINGS).apply {
+        return null
+    }
+
+    /**
+     * Samsung One UI dahil tüm cihazlarda doğrudan "Varsayılan Ana Ekran Uygulaması"
+     * seçim ekranını açar.
+     */
+    fun openHomeSettings(context: Context) {
+        val homeSettingsIntent = Intent(Settings.ACTION_HOME_SETTINGS).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (runCatching { context.startActivity(homeSettingsIntent) }.isFailure) {
+            val manageDefaultApps = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            runCatching { context.startActivity(manageDefaultApps) }
         }
     }
 

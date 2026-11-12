@@ -16,6 +16,8 @@ class HnmLauncherApp : Application() {
         enableTabletLayout = false // İlk aşamada telefon aktif; tablet mimaride rezerve tutulur
     )
 
+    var hasAutoPromptedDefaultRole: Boolean = false
+
     lateinit var installedAppsRepository: InstalledAppsRepository
         private set
 
