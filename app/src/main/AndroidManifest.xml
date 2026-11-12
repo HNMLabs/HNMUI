@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Home Launcher tüm yüklü kullanıcı uygulamalarını listeleyebilmek için ihtiyaç duyar -->
-    <uses-permission
-        android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
-
-    <!-- Bildirim panelini jest ile indirebilmek ve dokunsal geri bildirim sağlamak için -->
-    <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+    <!-- Dokunsal (Haptic) geri bildirim için standart, düşük riskli sistem izni -->
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
+      Android 11+ Paket Görünürlüğü (<queries>):
+      QUERY_ALL_PACKAGES gibi yüksek riskli izinler istemeden, cihazdaki tüm başlatılabilir
+      uygulamaları (MAIN + LAUNCHER) standart ve güvenli biçimde listelemeyi sağlar.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:name=".HnmLauncherApp"
@@ -46,17 +51,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <!-- Sıfır-polling, olay tabanlı canlı uygulama bildirim rozeti (badge) dinleyicisi -->
-        <service
-            android:name=".service.HnmNotificationListenerService"
-            android:exported="true"
-            android:label="@string/notification_listener_label"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
 
     </application>
 

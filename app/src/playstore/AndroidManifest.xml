@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+          Google Play Store (playstore varyantı) üzerinden dağıtıldığında canlı bildirim
+          rozeti servisi (BIND_NOTIFICATION_LISTENER_SERVICE) otomatik dahil edilir.
+          Harici APK (sideload) dağıtımlarında Google Play Protect Enhanced Fraud Protection
+          engeline takılmamak için bu servis dışarıda bırakılır.
+        -->
+        <service
+            android:name=".service.HnmNotificationListenerService"
+            android:exported="true"
+            android:label="@string/notification_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+
+</manifest>

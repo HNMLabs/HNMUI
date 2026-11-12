@@ -53,6 +53,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.hnmlabs.hnmui.BuildConfig
 import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.QuickNoteItem
@@ -77,6 +78,7 @@ fun TodayViewPage(
     isNotificationAccessEnabled: Boolean,
     isTabletHardwareDetected: Boolean,
     suggestedApps: List<AppItem>,
+    installedAppCount: Int,
     totalUnreadBadges: Int,
     quickNotes: List<QuickNoteItem>,
     boundWidgetIds: List<Int>,
@@ -141,7 +143,10 @@ fun TodayViewPage(
             }
         }
 
-        if (!isDefaultLauncher || !isNotificationAccessEnabled) {
+        val showNotificationBanner =
+            BuildConfig.SUPPORTS_NOTIFICATION_LISTENER && !isNotificationAccessEnabled
+
+        if (!isDefaultLauncher || showNotificationBanner) {
             item(key = "setup_banners") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (!isDefaultLauncher) {
@@ -159,7 +164,7 @@ fun TodayViewPage(
                             onClick = onRequestDefaultLauncher
                         )
                     }
-                    if (!isNotificationAccessEnabled) {
+                    if (showNotificationBanner) {
                         SetupActionCard(
                             icon = {
                                 Icon(
@@ -238,23 +243,39 @@ fun TodayViewPage(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.NotificationsActive,
+                                imageVector = if (BuildConfig.SUPPORTS_NOTIFICATION_LISTENER) {
+                                    Icons.Rounded.NotificationsActive
+                                } else {
+                                    Icons.Rounded.Widgets
+                                },
                                 contentDescription = null,
                                 tint = HnmPalette.AccentCyan,
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = "Bildirimler",
+                                text = if (BuildConfig.SUPPORTS_NOTIFICATION_LISTENER) {
+                                    "Bildirimler"
+                                } else {
+                                    "Uygulamalar"
+                                },
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
                         Text(
-                            text = totalUnreadBadges.toString(),
+                            text = if (BuildConfig.SUPPORTS_NOTIFICATION_LISTENER) {
+                                totalUnreadBadges.toString()
+                            } else {
+                                installedAppCount.toString()
+                            },
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (totalUnreadBadges == 0) "Her şey güncel" else "Okunmamış bildirim",
+                            text = if (BuildConfig.SUPPORTS_NOTIFICATION_LISTENER) {
+                                if (totalUnreadBadges == 0) "Her şey güncel" else "Okunmamış bildirim"
+                            } else {
+                                "Arşivde hazır"
+                            },
                             style = MaterialTheme.typography.labelMedium,
                             color = HnmPalette.TextMuted
                         )

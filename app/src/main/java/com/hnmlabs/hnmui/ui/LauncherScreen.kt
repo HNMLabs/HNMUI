@@ -120,6 +120,7 @@ fun LauncherScreen(
                         isNotificationAccessEnabled = state.isNotificationAccessEnabled,
                         isTabletHardwareDetected = state.gridSpec.isTabletHardwareDetected,
                         suggestedApps = state.suggestedApps,
+                        installedAppCount = state.allApps.size,
                         totalUnreadBadges = state.totalUnreadBadges,
                         quickNotes = state.quickNotes,
                         boundWidgetIds = state.boundWidgetIds,
