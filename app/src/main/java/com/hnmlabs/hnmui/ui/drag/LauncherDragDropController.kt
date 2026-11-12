@@ -271,106 +271,114 @@ fun Modifier.launcherDraggableItem(
             val touchSlop = viewConfiguration.touchSlop
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
-                isPressed = true
-                val startLocal = down.position
-                val holdTimeoutMs = if (currentIsEditMode) 185L else 360L
-
-                var longPressed = false
-                var movedBeforeLongPress = false
-                var endedEarly = false
-
-                try {
-                    withTimeout(holdTimeoutMs) {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) {
-                                isPressed = false
-                                if (!movedBeforeLongPress && !change.isConsumed) {
-                                    change.consume()
-                                    currentOnTap()
-                                }
-                                endedEarly = true
-                                return@withTimeout
-                            }
-                            val dist = hypot(
-                                change.position.x - startLocal.x,
-                                change.position.y - startLocal.y
-                            )
-                            if (dist > touchSlop) {
-                                movedBeforeLongPress = true
-                                isPressed = false
-                                endedEarly = true
-                                return@withTimeout
-                            }
-                        }
-                    }
-                } catch (_: PointerEventTimeoutCancellationException) {
-                    longPressed = true
-                }
-
-                isPressed = false
-                if (endedEarly || !longPressed) return@awaitEachGesture
-
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-
                 var draggingStarted = false
-                var currentLocalPos = startLocal
+                try {
+                    isPressed = true
+                    val startLocal = down.position
+                    val holdTimeoutMs = if (currentIsEditMode) 185L else 360L
 
-                fun toRoot(local: Offset): Offset {
-                    val coords = itemCoords
-                    return if (coords != null && coords.isAttached) {
-                        coords.positionInRoot() + local
-                    } else {
-                        local
-                    }
-                }
+                    var longPressed = false
+                    var movedBeforeLongPress = false
+                    var endedEarly = false
 
-                if (currentIsEditMode) {
-                    draggingStarted = true
-                    val rootStart = toRoot(currentLocalPos)
-                    controller.startDrag(currentOriginProvider(), rootStart)
-                    currentOnDragMoved(rootStart)
-                } else {
-                    // Normal modda önce Haptic Menüyü göster; parmak kalkmadan sürüklenirse sürüklemeye geç!
-                    currentOnOpenQuickMenu()
-                }
-
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                    if (!change.pressed) {
-                        change.consume()
-                        if (draggingStarted) {
-                            val result = controller.finishDrag()
-                            if (result != null) {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                currentOnDragEnded(result.first, result.second)
+                    try {
+                        withTimeout(holdTimeoutMs) {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    isPressed = false
+                                    if (!movedBeforeLongPress && !change.isConsumed) {
+                                        change.consume()
+                                        currentOnTap()
+                                    }
+                                    endedEarly = true
+                                    return@withTimeout
+                                }
+                                val dist = hypot(
+                                    change.position.x - startLocal.x,
+                                    change.position.y - startLocal.y
+                                )
+                                if (dist > touchSlop) {
+                                    movedBeforeLongPress = true
+                                    isPressed = false
+                                    endedEarly = true
+                                    return@withTimeout
+                                }
                             }
                         }
-                        break
+                    } catch (_: PointerEventTimeoutCancellationException) {
+                        longPressed = true
                     }
 
-                    currentLocalPos = change.position
-                    val distFromStart = hypot(
-                        currentLocalPos.x - startLocal.x,
-                        currentLocalPos.y - startLocal.y
-                    )
+                    isPressed = false
+                    if (endedEarly || !longPressed) return@awaitEachGesture
 
-                    if (!draggingStarted && distFromStart >= moveToDragThresholdPx) {
-                        draggingStarted = true
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        currentOnDismissAndEnterEdit()
-                        val rootPos = toRoot(currentLocalPos)
-                        controller.startDrag(currentOriginProvider(), rootPos)
-                        currentOnDragMoved(rootPos)
-                        change.consume()
-                    } else if (draggingStarted) {
-                        if (change.positionChange() != Offset.Zero) {
-                            change.consume()
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+
+                    var currentLocalPos = startLocal
+
+                    fun toRoot(local: Offset): Offset {
+                        val coords = itemCoords
+                        return if (coords != null && coords.isAttached) {
+                            coords.positionInRoot() + local
+                        } else {
+                            local
                         }
-                        val rootPos = toRoot(currentLocalPos)
-                        currentOnDragMoved(rootPos)
+                    }
+
+                    if (currentIsEditMode) {
+                        draggingStarted = true
+                        val rootStart = toRoot(currentLocalPos)
+                        controller.startDrag(currentOriginProvider(), rootStart)
+                        currentOnDragMoved(rootStart)
+                    } else {
+                        // Normal modda önce Haptic Menüyü göster; parmak kalkmadan sürüklenirse sürüklemeye geç!
+                        currentOnOpenQuickMenu()
+                    }
+
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id }
+                        if (change == null || !change.pressed) {
+                            change?.consume()
+                            if (draggingStarted) {
+                                val result = controller.finishDrag()
+                                draggingStarted = false
+                                if (result != null) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    currentOnDragEnded(result.first, result.second)
+                                }
+                            }
+                            break
+                        }
+
+                        currentLocalPos = change.position
+                        val distFromStart = hypot(
+                            currentLocalPos.x - startLocal.x,
+                            currentLocalPos.y - startLocal.y
+                        )
+
+                        if (!draggingStarted && distFromStart >= moveToDragThresholdPx) {
+                            draggingStarted = true
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            currentOnDismissAndEnterEdit()
+                            val rootPos = toRoot(currentLocalPos)
+                            controller.startDrag(currentOriginProvider(), rootPos)
+                            currentOnDragMoved(rootPos)
+                            change.consume()
+                        } else if (draggingStarted) {
+                            if (change.positionChange() != Offset.Zero) {
+                                change.consume()
+                            }
+                            val rootPos = toRoot(currentLocalPos)
+                            currentOnDragMoved(rootPos)
+                        }
+                    }
+                } finally {
+                    isPressed = false
+                    if (draggingStarted && controller.isDragging) {
+                        controller.cancelDrag()
                     }
                 }
             }

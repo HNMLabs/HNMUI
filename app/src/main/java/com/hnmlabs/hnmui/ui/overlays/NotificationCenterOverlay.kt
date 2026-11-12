@@ -128,7 +128,21 @@ fun NotificationCenterOverlay(
     val dateFmt = remember { DateTimeFormatter.ofPattern("d MMMM EEEE", trLocale) }
 
     var now by remember { mutableStateOf(LocalDateTime.now()) }
-    var battery by remember { mutableStateOf(DeviceSystemController.readBatterySnapshot(context)) }
+    var battery by remember {
+        mutableStateOf(
+            com.hnmlabs.hnmui.core.system.BatterySnapshot(
+                levelPercent = 100,
+                isCharging = false,
+                sourceLabel = "Pil Kullanımda",
+                healthLabel = "İyi (%100 Normal)",
+                temperatureCelsius = 28.0f,
+                voltageVolts = 4.1f,
+                currentMilliAmps = 0,
+                technology = "Li-ion",
+                isPowerSaveMode = false
+            )
+        )
+    }
     var ringerMode by remember { mutableIntStateOf(AudioManager.RINGER_MODE_NORMAL) }
     var isTorchOn by remember { mutableStateOf(false) }
     var draftNote by remember { mutableStateOf("") }
@@ -136,8 +150,12 @@ fun NotificationCenterOverlay(
     LaunchedEffect(visible) {
         if (visible) {
             now = LocalDateTime.now()
-            battery = DeviceSystemController.readBatterySnapshot(context)
-            ringerMode = DeviceSystemController.readAudioSnapshot(context).ringerMode
+            val (bat, ringer) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                DeviceSystemController.readBatterySnapshot(context) to
+                    DeviceSystemController.readAudioSnapshot(context).ringerMode
+            }
+            battery = bat
+            ringerMode = ringer
         }
     }
 
@@ -150,18 +168,16 @@ fun NotificationCenterOverlay(
         enter = fadeIn(animationSpec = HnmMotion.sheetSpring()) +
             slideInVertically(
                 initialOffsetY = { -it / 4 },
-                animationSpec = HnmMotion.sheetSpring()
+                animationSpec = HnmMotion.sheetOffsetSpring()
             ) +
             scaleIn(initialScale = 0.97f, animationSpec = HnmMotion.sheetSpring()),
         exit = fadeOut(animationSpec = HnmMotion.sheetSpring()) +
             slideOutVertically(
                 targetOffsetY = { -it / 4 },
-                animationSpec = HnmMotion.sheetSpring()
+                animationSpec = HnmMotion.sheetOffsetSpring()
             ) +
             scaleOut(targetScale = 0.97f, animationSpec = HnmMotion.sheetSpring())
     ) {
-        var upwardDragPx = 0f
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -175,13 +191,21 @@ fun NotificationCenterOverlay(
                     )
                 )
                 .pointerInput(Unit) {
+                    var upwardDragPx = 0f
+                    var dismissedInGesture = false
                     detectVerticalDragGestures(
-                        onDragStart = { upwardDragPx = 0f },
-                        onVerticalDrag = { _, dragAmount ->
-                            upwardDragPx += dragAmount
-                            if (upwardDragPx < -90f) {
-                                upwardDragPx = 0f
-                                onDismiss()
+                        onDragStart = {
+                            upwardDragPx = 0f
+                            dismissedInGesture = false
+                        },
+                        onVerticalDrag = { change, dragAmount ->
+                            if (!change.isConsumed && !dismissedInGesture) {
+                                upwardDragPx += dragAmount
+                                if (upwardDragPx < -90f) {
+                                    dismissedInGesture = true
+                                    change.consume()
+                                    onDismiss()
+                                }
                             }
                         }
                     )

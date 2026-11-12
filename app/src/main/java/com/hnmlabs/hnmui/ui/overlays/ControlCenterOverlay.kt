@@ -96,7 +96,16 @@ fun ControlCenterOverlay(
     val activity = context as? Activity
     val haptics = LocalHapticFeedback.current
 
-    var connectivity by remember { mutableStateOf(DeviceSystemController.readConnectivitySnapshot(context)) }
+    var connectivity by remember {
+        mutableStateOf(
+            com.hnmlabs.hnmui.core.system.ConnectivitySnapshot(
+                isWifiConnected = true,
+                isCellularConnected = false,
+                isAirplaneMode = false,
+                isBluetoothEnabled = false
+            )
+        )
+    }
     var brightness by remember { mutableFloatStateOf(0.6f) }
     var volume by remember { mutableFloatStateOf(0.5f) }
     var isRotationLocked by remember { mutableStateOf(false) }
@@ -104,11 +113,21 @@ fun ControlCenterOverlay(
 
     LaunchedEffect(visible) {
         if (visible) {
-            connectivity = DeviceSystemController.readConnectivitySnapshot(context)
-            val disp = DeviceSystemController.readDisplaySnapshot(context, activity)
-            brightness = disp.brightnessFraction
+            val winBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
+            val (net, disp, aud) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                Triple(
+                    DeviceSystemController.readConnectivitySnapshot(context),
+                    DeviceSystemController.readDisplaySnapshot(context, null),
+                    DeviceSystemController.readAudioSnapshot(context)
+                )
+            }
+            connectivity = net
+            brightness = if (winBrightness in 0.01f..1.0f && !disp.canWriteSystemSettings) {
+                winBrightness
+            } else {
+                disp.brightnessFraction
+            }
             isRotationLocked = disp.isRotationLocked
-            val aud = DeviceSystemController.readAudioSnapshot(context)
             volume = aud.mediaFraction
         }
     }
@@ -118,30 +137,36 @@ fun ControlCenterOverlay(
         enter = fadeIn(animationSpec = HnmMotion.sheetSpring()) +
             slideInVertically(
                 initialOffsetY = { -it / 4 },
-                animationSpec = HnmMotion.sheetSpring()
+                animationSpec = HnmMotion.sheetOffsetSpring()
             ) +
             scaleIn(initialScale = 0.96f, animationSpec = HnmMotion.sheetSpring()),
         exit = fadeOut(animationSpec = HnmMotion.sheetSpring()) +
             slideOutVertically(
                 targetOffsetY = { -it / 4 },
-                animationSpec = HnmMotion.sheetSpring()
+                animationSpec = HnmMotion.sheetOffsetSpring()
             ) +
             scaleOut(targetScale = 0.96f, animationSpec = HnmMotion.sheetSpring())
     ) {
-        var upwardSwipePx = 0f
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xB8080D18))
                 .pointerInput(Unit) {
+                    var upwardSwipePx = 0f
+                    var dismissedInGesture = false
                     detectVerticalDragGestures(
-                        onDragStart = { upwardSwipePx = 0f },
-                        onVerticalDrag = { _, dragAmount ->
-                            upwardSwipePx += dragAmount
-                            if (upwardSwipePx < -85f) {
-                                upwardSwipePx = 0f
-                                onDismiss()
+                        onDragStart = {
+                            upwardSwipePx = 0f
+                            dismissedInGesture = false
+                        },
+                        onVerticalDrag = { change, dragAmount ->
+                            if (!change.isConsumed && !dismissedInGesture) {
+                                upwardSwipePx += dragAmount
+                                if (upwardSwipePx < -85f) {
+                                    dismissedInGesture = true
+                                    change.consume()
+                                    onDismiss()
+                                }
                             }
                         }
                     )
@@ -557,7 +582,8 @@ private fun VerticalGlassSlider(
     modifier: Modifier = Modifier
 ) {
     var heightPx by remember { mutableFloatStateOf(1f) }
-    val clamped = fraction.coerceIn(0f, 1f)
+    val safeFraction = if (fraction.isFinite()) fraction else 0.5f
+    val clamped = safeFraction.coerceIn(0f, 1f)
 
     GlassSurface(
         modifier = modifier
@@ -565,13 +591,13 @@ private fun VerticalGlassSlider(
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
                     onDragStart = { offset ->
-                        val next = 1f - (offset.y / heightPx)
-                        onFractionChange(next.coerceIn(0f, 1f))
+                        val next = 1f - (offset.y / heightPx.coerceAtLeast(1f))
+                        if (next.isFinite()) onFractionChange(next.coerceIn(0f, 1f))
                     },
                     onVerticalDrag = { change, _ ->
                         change.consume()
-                        val next = 1f - (change.position.y / heightPx)
-                        onFractionChange(next.coerceIn(0f, 1f))
+                        val next = 1f - (change.position.y / heightPx.coerceAtLeast(1f))
+                        if (next.isFinite()) onFractionChange(next.coerceIn(0f, 1f))
                     }
                 )
             },

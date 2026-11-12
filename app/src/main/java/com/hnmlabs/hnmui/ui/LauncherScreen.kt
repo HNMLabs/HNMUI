@@ -242,12 +242,16 @@ fun LauncherScreen(
                 .pointerInput(Unit) {
                     val touchSlop = viewConfiguration.touchSlop
                     awaitEachGesture {
-                        if (latestAnyOverlayOpen || dragController.isDragging) return@awaitEachGesture
-
+                        // KRİTİK: awaitFirstDown her döngüde İLK satırda çağrılmalı ki parmak basılana kadar
+                        // coroutine askıda (suspend) kalsın; aksi halde panel açıkken Main Thread sonsuz döngüye girer!
                         val down = awaitFirstDown(
                             requireUnconsumed = false,
                             pass = PointerEventPass.Initial
                         )
+                        if (latestAnyOverlayOpen || dragController.isDragging) {
+                            return@awaitEachGesture
+                        }
+
                         val startX = down.position.x
                         val startY = down.position.y
                         var aborted = false
@@ -437,12 +441,12 @@ fun LauncherScreen(
                     enter = fadeIn(animationSpec = HnmMotion.sheetSpring()) +
                         slideInVertically(
                             initialOffsetY = { it / 2 },
-                            animationSpec = HnmMotion.sheetSpring()
+                            animationSpec = HnmMotion.sheetOffsetSpring()
                         ),
                     exit = fadeOut(animationSpec = HnmMotion.sheetSpring()) +
                         slideOutVertically(
                             targetOffsetY = { it / 2 },
-                            animationSpec = HnmMotion.sheetSpring()
+                            animationSpec = HnmMotion.sheetOffsetSpring()
                         ),
                     modifier = Modifier.align(Alignment.BottomCenter)
                 ) {

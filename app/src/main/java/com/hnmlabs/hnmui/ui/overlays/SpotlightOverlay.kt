@@ -91,13 +91,13 @@ fun SpotlightOverlay(
         enter = fadeIn(animationSpec = HnmMotion.sheetSpring()) +
             slideInVertically(
                 initialOffsetY = { -it / 7 },
-                animationSpec = HnmMotion.sheetSpring()
+                animationSpec = HnmMotion.sheetOffsetSpring()
             ) +
             scaleIn(initialScale = 0.97f, animationSpec = HnmMotion.sheetSpring()),
         exit = fadeOut(animationSpec = HnmMotion.sheetSpring()) +
             slideOutVertically(
                 targetOffsetY = { -it / 7 },
-                animationSpec = HnmMotion.sheetSpring()
+                animationSpec = HnmMotion.sheetOffsetSpring()
             ) +
             scaleOut(targetScale = 0.97f, animationSpec = HnmMotion.sheetSpring())
     ) {

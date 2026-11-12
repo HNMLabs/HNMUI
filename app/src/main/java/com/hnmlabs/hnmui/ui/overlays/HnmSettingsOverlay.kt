@@ -153,12 +153,12 @@ fun HnmSettingsOverlay(
         enter = fadeIn(animationSpec = HnmMotion.sheetSpring()) +
             slideInVertically(
                 initialOffsetY = { it / 10 },
-                animationSpec = HnmMotion.sheetSpring()
+                animationSpec = HnmMotion.sheetOffsetSpring()
             ),
         exit = fadeOut(animationSpec = HnmMotion.sheetSpring()) +
             slideOutVertically(
                 targetOffsetY = { it / 10 },
-                animationSpec = HnmMotion.sheetSpring()
+                animationSpec = HnmMotion.sheetOffsetSpring()
             )
     ) {
         Box(
@@ -176,14 +176,14 @@ fun HnmSettingsOverlay(
                 targetState = currentRoute,
                 transitionSpec = {
                     if (targetState != SettingsRoute.ROOT) {
-                        (slideInHorizontally(animationSpec = HnmMotion.sheetSpring()) { it / 3 } +
+                        (slideInHorizontally(animationSpec = HnmMotion.sheetOffsetSpring()) { it / 3 } +
                             fadeIn(animationSpec = HnmMotion.sheetSpring())) togetherWith
-                            (slideOutHorizontally(animationSpec = HnmMotion.sheetSpring()) { -it / 5 } +
+                            (slideOutHorizontally(animationSpec = HnmMotion.sheetOffsetSpring()) { -it / 5 } +
                                 fadeOut(animationSpec = HnmMotion.sheetSpring()))
                     } else {
-                        (slideInHorizontally(animationSpec = HnmMotion.sheetSpring()) { -it / 5 } +
+                        (slideInHorizontally(animationSpec = HnmMotion.sheetOffsetSpring()) { -it / 5 } +
                             fadeIn(animationSpec = HnmMotion.sheetSpring())) togetherWith
-                            (slideOutHorizontally(animationSpec = HnmMotion.sheetSpring()) { it / 3 } +
+                            (slideOutHorizontally(animationSpec = HnmMotion.sheetOffsetSpring()) { it / 3 } +
                                 fadeOut(animationSpec = HnmMotion.sheetSpring()))
                     }
                 },

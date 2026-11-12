@@ -1,7 +1,10 @@
 package com.hnmlabs.hnmui.ui.theme
 
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
+import androidx.compose.ui.unit.IntOffset
 
 /**
  * iOS'un doğal tepkiselliğini sağlayan yay fiziği (Spring Physics) sabitleri.
@@ -11,13 +14,20 @@ object HnmMotion {
     /** Alt sayfa, Denetim Merkezi ve Bildirim Merkezi için sarsıntısız, sakin iOS yayı */
     fun <T> sheetSpring() = spring<T>(
         dampingRatio = 0.88f,
-        stiffness = 360f
+        stiffness = 380f
+    )
+
+    /** Piksel kaydırma (slideIn/slideOut) animasyonlarında alt-piksel takılmasını önleyen 1px eşikli yay */
+    fun sheetOffsetSpring(): FiniteAnimationSpec<IntOffset> = spring(
+        dampingRatio = 0.88f,
+        stiffness = 380f,
+        visibilityThreshold = IntOffset.VisibilityThreshold
     )
 
     /** Açık panel arkasındaki ana ekranın hafifçe geriye çekilme (depth recession) yayı */
     fun <T> recedeSpring() = spring<T>(
         dampingRatio = 0.90f,
-        stiffness = 330f
+        stiffness = 340f
     )
 
     /** Klasör açılış/kapanış ölçekleme yayı */

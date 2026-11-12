@@ -103,13 +103,19 @@ object DeviceSystemController {
             context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         }.getOrNull()
 
-        val level = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.coerceIn(0, 100)
-            ?: sticky?.getIntExtra(BatteryManager.EXTRA_LEVEL, 100)?.coerceIn(0, 100)
-            ?: 100
+        val propCap = runCatching {
+            bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        }.getOrNull()?.takeIf { it in 0..100 }
+        val stickyCap = runCatching {
+            val l = sticky?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val s = (sticky?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100).coerceAtLeast(1)
+            if (l >= 0) ((l * 100f) / s).roundToInt().coerceIn(0, 100) else null
+        }.getOrNull()
+        val level = propCap ?: stickyCap ?: 100
 
         val status = sticky?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
         val plugged = sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
-        val charging = bm?.isCharging ?: (
+        val charging = runCatching { bm?.isCharging }.getOrNull() ?: (
             status == BatteryManager.BATTERY_STATUS_CHARGING ||
                 status == BatteryManager.BATTERY_STATUS_FULL ||
                 plugged != 0
@@ -139,7 +145,9 @@ object DeviceSystemController {
         val tempTenths = sticky?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 285) ?: 285
         val voltageMv = sticky?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 4100) ?: 4100
         val voltageV = if (voltageMv > 100) voltageMv / 1000f else voltageMv.toFloat()
-        val currentMicroAmps = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) ?: 0
+        val currentMicroAmps = runCatching {
+            bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+        }.getOrNull()?.takeIf { it != Int.MIN_VALUE } ?: 0
         val currentMa = (currentMicroAmps / 1000)
         val tech = sticky?.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY)
             ?.takeIf { it.isNotBlank() } ?: "Li-ion"
@@ -153,13 +161,13 @@ object DeviceSystemController {
             voltageVolts = voltageV,
             currentMilliAmps = currentMa,
             technology = tech,
-            isPowerSaveMode = powerManager?.isPowerSaveMode ?: false
+            isPowerSaveMode = runCatching { powerManager?.isPowerSaveMode }.getOrNull() ?: false
         )
     }
 
     fun readDisplaySnapshot(context: Context, activity: Activity? = null): DisplaySnapshot {
         val resolver = context.contentResolver
-        val canWrite = Settings.System.canWrite(context)
+        val canWrite = runCatching { Settings.System.canWrite(context) }.getOrDefault(false)
 
         val windowBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
         val sysBrightnessInt = runCatching {
@@ -195,15 +203,18 @@ object DeviceSystemController {
     }
 
     fun setBrightnessFraction(context: Context, activity: Activity?, fraction: Float) {
+        if (!fraction.isFinite()) return
         val clamped = fraction.coerceIn(0.03f, 1f)
         // Pencere parlaklığını izin beklemeden anında 120 FPS tepkiyle güncelle
-        activity?.window?.let { win ->
-            val attrs = win.attributes
-            attrs.screenBrightness = clamped
-            win.attributes = attrs
+        runCatching {
+            activity?.window?.let { win ->
+                val attrs = win.attributes
+                attrs.screenBrightness = clamped
+                win.attributes = attrs
+            }
         }
 
-        if (Settings.System.canWrite(context)) {
+        if (runCatching { Settings.System.canWrite(context) }.getOrDefault(false)) {
             runCatching {
                 val resolver = context.contentResolver
                 Settings.System.putInt(
@@ -227,7 +238,7 @@ object DeviceSystemController {
     }
 
     fun setAutoBrightness(context: Context, enabled: Boolean): Boolean {
-        if (!Settings.System.canWrite(context)) return false
+        if (!runCatching { Settings.System.canWrite(context) }.getOrDefault(false)) return false
         return runCatching {
             Settings.System.putInt(
                 context.contentResolver,
@@ -242,7 +253,7 @@ object DeviceSystemController {
     }
 
     fun setRotationLocked(context: Context, locked: Boolean): Boolean {
-        if (!Settings.System.canWrite(context)) return false
+        if (!runCatching { Settings.System.canWrite(context) }.getOrDefault(false)) return false
         return runCatching {
             Settings.System.putInt(
                 context.contentResolver,
@@ -253,7 +264,7 @@ object DeviceSystemController {
     }
 
     fun setScreenTimeoutMs(context: Context, timeoutMs: Int): Boolean {
-        if (!Settings.System.canWrite(context)) return false
+        if (!runCatching { Settings.System.canWrite(context) }.getOrDefault(false)) return false
         return runCatching {
             Settings.System.putInt(
                 context.contentResolver,
@@ -274,22 +285,22 @@ object DeviceSystemController {
     }
 
     fun readAudioSnapshot(context: Context): AudioSnapshot {
-        val am = context.getSystemService(AudioManager::class.java)
+        val am = runCatching { context.getSystemService(AudioManager::class.java) }.getOrNull()
             ?: return AudioSnapshot(0.5f, 0.5f, 0.7f, 0.7f, AudioManager.RINGER_MODE_NORMAL, false)
 
-        fun streamFraction(stream: Int): Float {
+        fun streamFraction(stream: Int, fallback: Float = 0.5f): Float = runCatching {
             val max = am.getStreamMaxVolume(stream).coerceAtLeast(1)
             val cur = am.getStreamVolume(stream).coerceIn(0, max)
-            return cur.toFloat() / max.toFloat()
-        }
+            (cur.toFloat() / max.toFloat()).takeIf { it.isFinite() } ?: fallback
+        }.getOrDefault(fallback)
 
         return AudioSnapshot(
-            mediaFraction = streamFraction(AudioManager.STREAM_MUSIC),
-            ringFraction = streamFraction(AudioManager.STREAM_RING),
-            alarmFraction = streamFraction(AudioManager.STREAM_ALARM),
-            callFraction = streamFraction(AudioManager.STREAM_VOICE_CALL),
-            ringerMode = am.ringerMode,
-            isMusicActive = am.isMusicActive
+            mediaFraction = streamFraction(AudioManager.STREAM_MUSIC, 0.5f),
+            ringFraction = streamFraction(AudioManager.STREAM_RING, 0.5f),
+            alarmFraction = streamFraction(AudioManager.STREAM_ALARM, 0.7f),
+            callFraction = streamFraction(AudioManager.STREAM_VOICE_CALL, 0.7f),
+            ringerMode = runCatching { am.ringerMode }.getOrDefault(AudioManager.RINGER_MODE_NORMAL),
+            isMusicActive = runCatching { am.isMusicActive }.getOrDefault(false)
         )
     }
 

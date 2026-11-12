@@ -5,12 +5,12 @@
 **iOS Simplicity Meets Android Freedom — Frosted-Glass 120 FPS Home Launcher**  
 **iOS Sadeliği, Android Özgürlüğüyle Buluştu — Buzlu Cam Dokulu 120 FPS Ana Ekran**
 
-[![Latest Release](https://img.shields.io/badge/release-v0.3.0--alpha-0A84FF?style=for-the-badge)](https://github.com/HNMLabs/HNMUI/releases/tag/v0.3.0-alpha)
+[![Latest Release](https://img.shields.io/badge/release-v0.3.1--alpha-0A84FF?style=for-the-badge)](https://github.com/HNMLabs/HNMUI/releases/tag/v0.3.1-alpha)
 [![Android](https://img.shields.io/badge/Android-9.0%2B%20(API%2028--35)-30D158?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-120%20FPS-38BDF8?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
 
-[**🇬🇧 English**](#english) · [**🇹🇷 Türkçe**](#türkçe) · [**📄 Türkçe Dosya (`README.tr.md`)**](README.tr.md) · [**⬇️ Download APK (`v0.3.0-alpha`)**](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.0-alpha.apk)
+[**🇬🇧 English**](#english) · [**🇹🇷 Türkçe**](#türkçe) · [**📄 Türkçe Dosya (`README.tr.md`)**](README.tr.md) · [**⬇️ Download APK (`v0.3.1-alpha`)**](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.1-alpha.apk)
 
 </div>
 
@@ -37,7 +37,7 @@
 ### 📦 Download & Installation
 
 Grab the Play Protect-compliant, release-signed APK directly:
-- **[Download HNMUI v0.3.0-alpha APK](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.0-alpha.apk)**
+- **[Download HNMUI v0.3.1-alpha APK](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.1-alpha.apk)**
 - After installing, tap **"Set as Default" / "Ayarla"** at the top of the Home Screen and select **HNMUI** as your Default Home App.
 
 ### 🏗️ Architecture & Build Variants
@@ -100,7 +100,7 @@ Requires **JDK 17+** and **Android SDK 35**.
 ### 📦 İndirme ve Kurulum
 
 Play Protect uyumlu, özel sürüm anahtarıyla imzalanmış APK dosyasını doğrudan indirebilirsiniz:
-- **[HNMUI v0.3.0-alpha APK İndir](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.0-alpha.apk)**
+- **[HNMUI v0.3.1-alpha APK İndir](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.1-alpha.apk)**
 - Kurulumdan sonra ana ekranın üstündeki **"Ayarla"** çubuğuna dokunup varsayılan ana ekran uygulaması olarak **HNMUI**'yi seçmeniz yeterlidir.
 
 ### 🛠️ Kaynak Koddan Derleme

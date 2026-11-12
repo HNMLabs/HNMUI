@@ -4,12 +4,12 @@
 
 **iOS Sadeliği, Android Özgürlüğüyle Buluştu — Buzlu Cam Dokulu 120 FPS Ana Ekran**
 
-[![Son Sürüm](https://img.shields.io/badge/s%C3%BCr%C3%BCm-v0.3.0--alpha-0A84FF?style=for-the-badge)](https://github.com/HNMLabs/HNMUI/releases/tag/v0.3.0-alpha)
+[![Son Sürüm](https://img.shields.io/badge/s%C3%BCr%C3%BCm-v0.3.1--alpha-0A84FF?style=for-the-badge)](https://github.com/HNMLabs/HNMUI/releases/tag/v0.3.1-alpha)
 [![Android](https://img.shields.io/badge/Android-9.0%2B%20(API%2028--35)-30D158?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-120%20FPS-38BDF8?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
 
-[**🇬🇧 English (`README.md`)**](README.md) · [**⬇️ APK İndir (`v0.3.0-alpha`)**](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.0-alpha.apk)
+[**🇬🇧 English (`README.md`)**](README.md) · [**⬇️ APK İndir (`v0.3.1-alpha`)**](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.1-alpha.apk)
 
 </div>
 
@@ -28,7 +28,7 @@
 
 ## 📦 İndirme ve Kurulum
 
-- **[HNMUI v0.3.0-alpha APK İndir](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.0-alpha.apk)**
+- **[HNMUI v0.3.1-alpha APK İndir](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.1-alpha.apk)**
 - Kurulumdan sonra ana ekranın üstündeki **"Ayarla"** çubuğuna dokunarak varsayılan ana ekran uygulaması olarak **HNMUI**'yi seçebilirsiniz.
 
 ## 🏗️ Proje Yapısı ve Dağıtım Profilleri

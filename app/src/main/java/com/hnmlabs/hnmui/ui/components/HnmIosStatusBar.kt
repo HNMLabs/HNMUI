@@ -31,11 +31,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,8 +50,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -85,6 +92,7 @@ fun HnmIosStatusBar(
     if (!visible) return
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
 
     var timeText by remember { mutableStateOf(LocalTime.now().format(timeFormatter)) }
@@ -92,50 +100,73 @@ fun HnmIosStatusBar(
     var isCharging by remember { mutableStateOf(false) }
     var isWifi by remember { mutableStateOf(true) }
 
-    DisposableEffect(context) {
-        fun refreshStatus(batteryIntent: Intent? = null) {
-            timeText = LocalTime.now().format(timeFormatter)
+    suspend fun refreshStatusSuspend(batteryIntent: Intent? = null) {
+        val formattedTime = LocalTime.now().format(timeFormatter)
+        val (wifiState, pct, charging) = withContext(Dispatchers.IO) {
             val net = DeviceSystemController.readConnectivitySnapshot(context)
-            isWifi = net.isWifiConnected
+            val sticky = batteryIntent ?: runCatching {
+                context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            }.getOrNull()
 
-            val sticky = batteryIntent ?: context.registerReceiver(
-                null,
-                IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-            )
+            var resolvedPct = batteryPercent
+            var resolvedCharging = isCharging
             if (sticky != null) {
                 val level = sticky.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
                 val scale = sticky.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
                 if (level >= 0) {
-                    batteryPercent = ((level * 100f) / scale).toInt().coerceIn(0, 100)
+                    resolvedPct = ((level * 100f) / scale).toInt().coerceIn(0, 100)
                 }
                 val status = sticky.getIntExtra(
                     BatteryManager.EXTRA_STATUS,
                     BatteryManager.BATTERY_STATUS_UNKNOWN
                 )
-                isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                resolvedCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
                     status == BatteryManager.BATTERY_STATUS_FULL
             }
+            Triple(net.isWifiConnected, resolvedPct, resolvedCharging)
         }
+        timeText = formattedTime
+        isWifi = wifiState
+        batteryPercent = pct
+        isCharging = charging
+    }
 
-        refreshStatus()
+    LaunchedEffect(context) {
+        while (true) {
+            refreshStatusSuspend()
+            delay(15_000L)
+        }
+    }
 
+    DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
-                refreshStatus(
-                    batteryIntent = intent?.takeIf { it.action == Intent.ACTION_BATTERY_CHANGED }
-                )
+                val batIntent = intent?.takeIf { it.action == Intent.ACTION_BATTERY_CHANGED }
+                scope.launch {
+                    refreshStatusSuspend(batteryIntent = batIntent)
+                }
             }
         }
 
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_TIME_TICK)
-            addAction(Intent.ACTION_TIME_CHANGED)
             addAction(Intent.ACTION_TIMEZONE_CHANGED)
             addAction(Intent.ACTION_BATTERY_CHANGED)
         }
-        context.registerReceiver(receiver, filter)
+        val registered = runCatching {
+            ContextCompat.registerReceiver(
+                context,
+                receiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            true
+        }.getOrDefault(false)
+
         onDispose {
-            runCatching { context.unregisterReceiver(receiver) }
+            if (registered) {
+                runCatching { context.unregisterReceiver(receiver) }
+            }
         }
     }
 

@@ -182,13 +182,22 @@ class LauncherActivity : ComponentActivity() {
     }
 
     private fun applySystemStatusBarPolicy(hideForIosBar: Boolean) {
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        if (hideForIosBar) {
-            controller.hide(WindowInsetsCompat.Type.statusBars())
+        val applyNow = {
+            runCatching {
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                if (hideForIosBar) {
+                    controller.hide(WindowInsetsCompat.Type.statusBars())
+                } else {
+                    controller.show(WindowInsetsCompat.Type.statusBars())
+                }
+            }
+        }
+        if (window.decorView.isAttachedToWindow) {
+            applyNow()
         } else {
-            controller.show(WindowInsetsCompat.Type.statusBars())
+            window.decorView.post { applyNow() }
         }
     }
 
