@@ -96,7 +96,28 @@ data class QuickNoteItem(
 )
 
 /**
- * DataStore üzerinde JSON olarak kalıcı saklanan kullanıcı ana ekran düzeni.
+ * Kullanıcının HNM Ayarlar içerisinden değiştirebildiği minimalist arayüz,
+ * ızgara (7x7'ye kadar), klasör ve Dock özelleştirme tercihleri.
+ */
+@Immutable
+@Serializable
+data class LauncherCustomizationSettings(
+    val gridColumns: Int = 4,
+    val gridRows: Int = 6,
+    val iconScalePercent: Int = 100,
+    val showHomeLabels: Boolean = true,
+    val folderColumns: Int = 3,
+    val folderPreviewColumns: Int = 2,
+    val dockVisible: Boolean = true,
+    val dockMaxItems: Int = 4,
+    val dockScalePercent: Int = 100,
+    val glassOpacityPercent: Int = 100,
+    val interceptSystemSettingsApp: Boolean = true,
+    val hapticFeedbackEnabled: Boolean = true
+)
+
+/**
+ * DataStore üzerinde JSON olarak kalıcı saklanan kullanıcı ana ekran düzeni ve ayarları.
  */
 @Serializable
 data class PersistedHomeState(
@@ -104,7 +125,9 @@ data class PersistedHomeState(
     val pages: List<HomePageModel> = emptyList(),
     val quickNotes: List<QuickNoteItem> = emptyList(),
     val boundWidgetIds: List<Int> = emptyList(),
-    val launchCounts: Map<String, Int> = emptyMap()
+    val launchCounts: Map<String, Int> = emptyMap(),
+    val customization: LauncherCustomizationSettings = LauncherCustomizationSettings(),
+    val hasInjectedHnmSettingsTile: Boolean = false
 )
 
 /**

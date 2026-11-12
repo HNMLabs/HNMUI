@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -14,6 +15,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+
+val LocalGlassOpacityFactor = compositionLocalOf { 1f }
 
 enum class GlassTone {
     DOCK,
@@ -24,9 +27,8 @@ enum class GlassTone {
 
 /**
  * HNMUI Buzlu Cam (Frosted Glass) yüzeyi.
- * Not: Yarı saydam yüzeylerde Android HWUI Modifier.shadow iç bölgede koyu bir dikdörtgen
- * (inner umbra) izi bıraktığı ve 120 FPS GPU akıcılığını düşürdüğü için donanım gölgesi
- * kullanılmaz; derinlik tamamen pürüzsüz cam gradyanı ve optik kenar ışıltısıyla sağlanır.
+ * Kullanıcının HNM Ayarlar içinden seçtiği cam yoğunluğu çarpanına (LocalGlassOpacityFactor)
+ * canlı olarak uyum sağlar; yarı saydam yüzeylerde iz bırakan donanım gölgesi kullanmaz.
  */
 @Composable
 @Suppress("UNUSED_PARAMETER")
@@ -37,18 +39,35 @@ fun GlassSurface(
     shadowElevation: Dp = 0.dp,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val opacityFactor = LocalGlassOpacityFactor.current.coerceIn(0.65f, 1.40f)
+
+    fun scaleAlpha(color: Color): Color =
+        color.copy(alpha = (color.alpha * opacityFactor).coerceIn(0.10f, 0.96f))
+
     val fillBrush = when (tone) {
         GlassTone.DOCK -> Brush.verticalGradient(
-            colors = listOf(HnmPalette.GlassDockFillTop, HnmPalette.GlassDockFillBottom)
+            colors = listOf(
+                scaleAlpha(HnmPalette.GlassDockFillTop),
+                scaleAlpha(HnmPalette.GlassDockFillBottom)
+            )
         )
         GlassTone.CARD -> Brush.verticalGradient(
-            colors = listOf(Color(0x70162032), Color(0x5C0F172A))
+            colors = listOf(
+                scaleAlpha(Color(0x70162032)),
+                scaleAlpha(Color(0x5C0F172A))
+            )
         )
         GlassTone.ELEVATED_MODAL -> Brush.verticalGradient(
-            colors = listOf(Color(0xE01E293B), Color(0xD90F172A))
+            colors = listOf(
+                scaleAlpha(Color(0xE01E293B)),
+                scaleAlpha(Color(0xD90F172A))
+            )
         )
         GlassTone.PILL -> Brush.verticalGradient(
-            colors = listOf(Color(0x42FFFFFF), Color(0x28CBD5E1))
+            colors = listOf(
+                scaleAlpha(Color(0x42FFFFFF)),
+                scaleAlpha(Color(0x28CBD5E1))
+            )
         )
     }
 

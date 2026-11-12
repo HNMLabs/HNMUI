@@ -242,7 +242,7 @@ fun SpotlightOverlay(
                                         tint = HnmPalette.AccentCyan
                                     )
                                     Text(
-                                        text = "Android Sistem Ayarlarını Aç",
+                                        text = "HNM Ayarlar & 7×7 Özelleştirme",
                                         style = MaterialTheme.typography.titleMedium
                                     )
                                 }

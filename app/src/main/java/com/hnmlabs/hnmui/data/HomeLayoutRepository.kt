@@ -11,6 +11,7 @@ import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.HomeGridItem
 import com.hnmlabs.hnmui.model.HomePageModel
+import com.hnmlabs.hnmui.model.LauncherCustomizationSettings
 import com.hnmlabs.hnmui.model.PersistedHomeState
 import com.hnmlabs.hnmui.model.QuickNoteItem
 import kotlinx.coroutines.flow.Flow
@@ -24,8 +25,8 @@ private val Context.homeLayoutDataStore: DataStore<Preferences> by preferencesDa
 )
 
 /**
- * Ana ekran sayfalarını, buzlu cam Dock öğelerini, klasörleri ve Today View hızlı notlarını
- * DataStore üzerinde JSON formatında kalıcı olarak yönetir.
+ * Ana ekran sayfalarını, buzlu cam Dock öğelerini, klasörleri, Today View hızlı notlarını
+ * ve minimalist ızgara/Dock özelleştirmelerini DataStore üzerinde kalıcı olarak yönetir.
  */
 class HomeLayoutRepository(
     private val context: Context
@@ -49,9 +50,146 @@ class HomeLayoutRepository(
     ) {
         if (installedApps.isEmpty()) return
         context.homeLayoutDataStore.edit { prefs ->
-            if (prefs[stateKey] != null) return@edit
-            val seeded = buildInitialSeedState(installedApps, maxPerPage, dockMaxItems)
-            prefs[stateKey] = json.encodeToString(seeded)
+            val existing = prefs[stateKey]
+                ?.let { runCatching { json.decodeFromString<PersistedHomeState>(it) }.getOrNull() }
+
+            if (existing == null) {
+                val seeded = buildInitialSeedState(installedApps, maxPerPage, dockMaxItems)
+                prefs[stateKey] = json.encodeToString(seeded)
+            } else if (!existing.hasInjectedHnmSettingsTile) {
+                // Önceki sürümden güncellenen kullanıcının ana ekranına HNM Ayarlar ikonunu ekle
+                val settingsKey = InstalledAppsRepository.HNM_SETTINGS_KEY
+                val alreadyPresent = existing.dock.any { it.stableId == settingsKey.stableId } ||
+                    existing.pages.any { page ->
+                        page.items.any { item ->
+                            when (item) {
+                                is HomeGridItem.AppTile -> item.key.stableId == settingsKey.stableId
+                                is HomeGridItem.FolderTile ->
+                                    item.apps.any { it.stableId == settingsKey.stableId }
+                            }
+                        }
+                    }
+
+                val updatedPages = if (alreadyPresent) {
+                    existing.pages
+                } else {
+                    val pages = existing.pages.toMutableList()
+                    val first = pages.firstOrNull()
+                        ?: HomePageModel(id = "page_1", items = emptyList())
+                    if (pages.isEmpty()) {
+                        pages += first.copy(items = listOf(HomeGridItem.AppTile(settingsKey)))
+                    } else {
+                        pages[0] = first.copy(
+                            items = listOf(HomeGridItem.AppTile(settingsKey)) + first.items
+                        )
+                    }
+                    rebalancePages(
+                        pages = pages,
+                        maxPerPage = (existing.customization.gridColumns * existing.customization.gridRows)
+                            .coerceAtLeast(16)
+                    )
+                }
+
+                prefs[stateKey] = json.encodeToString(
+                    existing.copy(
+                        pages = updatedPages,
+                        hasInjectedHnmSettingsTile = true
+                    )
+                )
+            }
+        }
+    }
+
+    suspend fun updateCustomization(
+        transform: (LauncherCustomizationSettings) -> LauncherCustomizationSettings
+    ) {
+        mutateState { state ->
+            val oldCustom = state.customization
+            val nextCustom = transform(oldCustom)
+            val oldMaxPerPage = oldCustom.gridColumns * oldCustom.gridRows
+            val nextMaxPerPage = (nextCustom.gridColumns.coerceIn(4, 7)) *
+                (nextCustom.gridRows.coerceIn(4, 7))
+
+            val nextPages = if (oldMaxPerPage != nextMaxPerPage) {
+                rebalancePages(state.pages, nextMaxPerPage)
+            } else {
+                state.pages
+            }
+
+            // Dock kapasitesi küçültüldüyse taşan öğeleri ana ekrana geri taşı
+            val maxDock = nextCustom.dockMaxItems.coerceIn(3, 7)
+            if (state.dock.size > maxDock) {
+                val keptDock = state.dock.take(maxDock)
+                val overflowDock = state.dock.drop(maxDock).map { HomeGridItem.AppTile(it) }
+                val mergedFirst = nextPages.firstOrNull()
+                    ?: HomePageModel(id = "page_1", items = emptyList())
+                val withOverflow = if (nextPages.isEmpty()) {
+                    listOf(mergedFirst.copy(items = overflowDock))
+                } else {
+                    listOf(mergedFirst.copy(items = mergedFirst.items + overflowDock)) +
+                        nextPages.drop(1)
+                }
+                state.copy(
+                    dock = keptDock,
+                    pages = rebalancePages(withOverflow, nextMaxPerPage),
+                    customization = nextCustom
+                )
+            } else {
+                state.copy(
+                    pages = nextPages,
+                    customization = nextCustom
+                )
+            }
+        }
+    }
+
+    suspend fun toggleDockPin(key: AppComponentKey, maxDockItems: Int) {
+        mutateState { state ->
+            val maxPerPage = (state.customization.gridColumns * state.customization.gridRows)
+                .coerceAtLeast(16)
+            val isCurrentlyInDock = state.dock.any { it.stableId == key.stableId }
+
+            if (isCurrentlyInDock) {
+                val nextDock = state.dock.filterNot { it.stableId == key.stableId }
+                val pages = state.pages.toMutableList()
+                val first = pages.firstOrNull() ?: HomePageModel(id = "page_1", items = emptyList())
+                if (pages.isEmpty()) {
+                    pages += first.copy(items = listOf(HomeGridItem.AppTile(key)))
+                } else {
+                    pages[0] = first.copy(items = first.items + HomeGridItem.AppTile(key))
+                }
+                state.copy(
+                    dock = nextDock,
+                    pages = rebalancePages(pages, maxPerPage)
+                )
+            } else {
+                if (state.dock.size >= maxDockItems.coerceIn(3, 7)) return@mutateState state
+                // Ana ekran sayfalarından çıkarıp Dock'a sabitle
+                val strippedPages = state.pages.map { page ->
+                    page.copy(
+                        items = page.items.mapNotNull { item ->
+                            when (item) {
+                                is HomeGridItem.AppTile ->
+                                    if (item.key.stableId == key.stableId) null else item
+                                is HomeGridItem.FolderTile -> {
+                                    val rem = item.apps.filterNot { it.stableId == key.stableId }
+                                    when (rem.size) {
+                                        0 -> null
+                                        1 -> HomeGridItem.AppTile(rem.first())
+                                        else -> item.copy(apps = rem)
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+                state.copy(
+                    dock = state.dock + key,
+                    pages = strippedPages.ifEmpty {
+                        listOf(HomePageModel(id = "page_1", items = emptyList()))
+                    }
+                )
+            }
         }
     }
 
@@ -122,7 +260,6 @@ class HomeLayoutRepository(
         folderTitle: String = "Klasör"
     ) {
         mutateState { state ->
-            // Önce uygulamayı mevcut tekil konumundan çıkar
             val strippedPages = state.pages.map { page ->
                 page.copy(
                     items = page.items.filterNot {
@@ -161,7 +298,9 @@ class HomeLayoutRepository(
                 } else {
                     strippedPages[0] = firstPage.copy(items = listOf(newFolder) + firstPage.items)
                 }
-                state.copy(pages = strippedPages)
+                val maxPerPage = (state.customization.gridColumns * state.customization.gridRows)
+                    .coerceAtLeast(16)
+                state.copy(pages = rebalancePages(strippedPages, maxPerPage))
             }
         }
     }
@@ -201,16 +340,14 @@ class HomeLayoutRepository(
                             1 -> nextItems += HomeGridItem.AppTile(remaining.first())
                             else -> nextItems += item.copy(apps = remaining)
                         }
-                        if (nextItems.size < maxPerPage) {
-                            nextItems += HomeGridItem.AppTile(appKey)
-                        }
+                        nextItems += HomeGridItem.AppTile(appKey)
                     } else {
                         nextItems += item
                     }
                 }
                 page.copy(items = nextItems)
             }
-            state.copy(pages = updatedPages)
+            state.copy(pages = rebalancePages(updatedPages, maxPerPage.coerceAtLeast(16)))
         }
     }
 
@@ -263,9 +400,24 @@ class HomeLayoutRepository(
     }
 
     companion object {
+        fun rebalancePages(
+            pages: List<HomePageModel>,
+            maxPerPage: Int
+        ): List<HomePageModel> {
+            val safeChunk = maxPerPage.coerceAtLeast(8)
+            val allItems = pages.flatMap { it.items }
+            if (allItems.isEmpty()) {
+                return listOf(HomePageModel(id = "page_1", items = emptyList()))
+            }
+            return allItems.chunked(safeChunk).mapIndexed { index, chunk ->
+                val existingId = pages.getOrNull(index)?.id ?: "page_${index + 1}"
+                HomePageModel(id = existingId, items = chunk)
+            }
+        }
+
         /**
          * İlk açılışta kullanıcının temel iletişim ve kamera uygulamalarını Dock'a yerleştirir,
-         * geri kalan uygulamaları temiz 4x6 sayfalara ve örnek bir "Araçlar" klasörüne dağıtır.
+         * HNM Ayarlar ve geri kalan uygulamaları temiz sayfalara dağıtır.
          */
         fun buildInitialSeedState(
             installedApps: List<AppItem>,
@@ -276,10 +428,12 @@ class HomeLayoutRepository(
 
             fun pickDockCandidate(keywords: List<String>) {
                 val match = installedApps.firstOrNull { app ->
-                    app !in dockCandidates && keywords.any { kw ->
-                        app.key.packageName.lowercase().contains(kw) ||
-                            app.label.lowercase().contains(kw)
-                    }
+                    app.key.stableId != InstalledAppsRepository.HNM_SETTINGS_KEY.stableId &&
+                        app !in dockCandidates &&
+                        keywords.any { kw ->
+                            app.key.packageName.lowercase().contains(kw) ||
+                                app.label.lowercase().contains(kw)
+                        }
                 }
                 if (match != null && dockCandidates.size < dockMaxItems) {
                     dockCandidates += match
@@ -293,7 +447,11 @@ class HomeLayoutRepository(
 
             for (app in installedApps) {
                 if (dockCandidates.size >= dockMaxItems) break
-                if (app !in dockCandidates) dockCandidates += app
+                if (app !in dockCandidates &&
+                    app.key.stableId != InstalledAppsRepository.HNM_SETTINGS_KEY.stableId
+                ) {
+                    dockCandidates += app
+                }
             }
 
             val dockKeys = dockCandidates.map { it.key }
@@ -301,7 +459,10 @@ class HomeLayoutRepository(
 
             val remaining = installedApps.filterNot { it.key.stableId in dockIds }
             val utilityFolderApps = remaining
-                .filter { it.category == AppCategory.UTILITIES }
+                .filter {
+                    it.category == AppCategory.UTILITIES &&
+                        it.key.stableId != InstalledAppsRepository.HNM_SETTINGS_KEY.stableId
+                }
                 .take(4)
 
             val folderAppIds = if (utilityFolderApps.size >= 2) {
@@ -311,6 +472,9 @@ class HomeLayoutRepository(
             }
 
             val gridItems = ArrayList<HomeGridItem>()
+            // İlk sıraya HNM Ayarlar ikonunu koy
+            gridItems += HomeGridItem.AppTile(InstalledAppsRepository.HNM_SETTINGS_KEY)
+
             if (utilityFolderApps.size >= 2) {
                 gridItems += HomeGridItem.FolderTile(
                     id = "folder_utilities_seed",
@@ -320,14 +484,16 @@ class HomeLayoutRepository(
             }
 
             for (app in remaining) {
-                if (app.key.stableId !in folderAppIds) {
+                if (app.key.stableId !in folderAppIds &&
+                    app.key.stableId != InstalledAppsRepository.HNM_SETTINGS_KEY.stableId
+                ) {
                     gridItems += HomeGridItem.AppTile(app.key)
                 }
             }
 
             val safePageSize = maxPerPage.coerceAtLeast(8)
             val pages = gridItems
-                .take(safePageSize * 2) // İlk kurulumda en fazla 2 sade sayfa oluştur, kalanlar App Library'de dursun
+                .take(safePageSize * 2)
                 .chunked(safePageSize)
                 .mapIndexed { idx, chunk ->
                     HomePageModel(id = "page_${idx + 1}", items = chunk)
@@ -337,12 +503,12 @@ class HomeLayoutRepository(
             val defaultNotes = listOf(
                 QuickNoteItem(
                     id = "welcome_1",
-                    text = "Spotlight araması için ana ekranda aşağı kaydır",
+                    text = "Sağ üstten aşağı çek: Denetim Merkezi • Ortadan çek: Spotlight",
                     isDone = false
                 ),
                 QuickNoteItem(
                     id = "welcome_2",
-                    text = "Uygulama Arşivi için en sağ sayfaya geç",
+                    text = "HNM Ayarlar ile 7x7 ızgara, klasör ve Dock boyutunu özelleştir",
                     isDone = false
                 )
             )
@@ -350,7 +516,8 @@ class HomeLayoutRepository(
             return PersistedHomeState(
                 dock = dockKeys,
                 pages = pages,
-                quickNotes = defaultNotes
+                quickNotes = defaultNotes,
+                hasInjectedHnmSettingsTile = true
             )
         }
     }

@@ -58,6 +58,31 @@ class LauncherCoreTest {
     }
 
     @Test
+    fun `custom 7x7 home grid and 7x7 folder grid fit safely within phone screen bounds`() {
+        val custom = com.hnmlabs.hnmui.model.LauncherCustomizationSettings(
+            gridColumns = 7,
+            gridRows = 7,
+            folderColumns = 7,
+            folderPreviewColumns = 3,
+            dockMaxItems = 6,
+            dockScalePercent = 85
+        )
+        val spec = FormFactorPolicy.resolve(
+            smallestScreenWidthDp = 384,
+            flags = LauncherFeatureFlags(enableTabletLayout = false),
+            customization = custom
+        )
+        assertEquals(7, spec.columns)
+        assertEquals(7, spec.rows)
+        assertEquals(49, spec.maxItemsPerPage)
+        assertEquals(7, spec.folderExpandedColumns)
+        assertEquals(3, spec.folderPreviewColumns)
+        assertEquals(6, spec.dockMaxItems)
+        assertTrue(spec.iconSizeDp in 28..45)
+        assertTrue(spec.dockIconSizeDp in 28..52)
+    }
+
+    @Test
     fun `classifier categorizes common apps accurately for App Library`() {
         assertEquals(
             AppCategory.SOCIAL,

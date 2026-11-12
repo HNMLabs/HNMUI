@@ -15,7 +15,7 @@ import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.AppLibraryGroup
 import com.hnmlabs.hnmui.model.AppShortcutItem
 import com.hnmlabs.hnmui.model.HomeGridItem
-import com.hnmlabs.hnmui.model.PersistedHomeState
+import com.hnmlabs.hnmui.model.LauncherCustomizationSettings
 import com.hnmlabs.hnmui.model.QuickNoteItem
 import com.hnmlabs.hnmui.model.ResolvedHomeItem
 import com.hnmlabs.hnmui.model.ResolvedHomePage
@@ -47,6 +47,8 @@ data class ActiveQuickMenu(
 data class LauncherOverlayState(
     val isSpotlightOpen: Boolean = false,
     val spotlightQuery: String = "",
+    val isControlCenterOpen: Boolean = false,
+    val isHnmSettingsOpen: Boolean = false,
     val isEditMode: Boolean = false,
     val openFolderModal: ActiveFolderModal? = null,
     val quickMenu: ActiveQuickMenu? = null,
@@ -58,6 +60,7 @@ data class LauncherOverlayState(
 
 data class LauncherUiState(
     val gridSpec: LauncherGridSpec,
+    val customization: LauncherCustomizationSettings,
     val allApps: List<AppItem>,
     val dockApps: List<AppItem>,
     val homePages: List<ResolvedHomePage>,
@@ -70,6 +73,8 @@ data class LauncherUiState(
     val totalUnreadBadges: Int,
     val isSpotlightOpen: Boolean,
     val spotlightQuery: String,
+    val isControlCenterOpen: Boolean,
+    val isHnmSettingsOpen: Boolean,
     val isEditMode: Boolean,
     val openFolderModal: ActiveFolderModal?,
     val quickMenu: ActiveQuickMenu?,
@@ -80,8 +85,8 @@ data class LauncherUiState(
 
 /**
  * HNMUI tek yönlü durum yönetimi (UDF) ViewModel sınıfı.
- * Yüklü uygulamaları, canlı bildirim rozetlerini, kalıcı DataStore düzenini ve
- * aktif katman durumlarını tek bir reaktif LauncherUiState akışında birleştirir.
+ * Yüklü uygulamaları, canlı bildirim rozetlerini, 7x7'ye kadar özelleştirilebilir DataStore
+ * düzenini, Denetim Merkezi'ni ve HNM Ayarlar katmanlarını yönetir.
  */
 class LauncherViewModel(
     private val appsRepository: InstalledAppsRepository,
@@ -95,7 +100,8 @@ class LauncherViewModel(
     private val _scrollToPrimaryHomeSignal = Channel<Unit>(Channel.CONFLATED)
     val scrollToPrimaryHomeSignal = _scrollToPrimaryHomeSignal.receiveAsFlow()
 
-    private val defaultGridSpec = FormFactorPolicy.resolve(392, featureFlags)
+    private val defaultCustomization = LauncherCustomizationSettings()
+    private val defaultGridSpec = FormFactorPolicy.resolve(392, featureFlags, defaultCustomization)
 
     val uiState: StateFlow<LauncherUiState> = combine(
         appsRepository.apps,
@@ -103,9 +109,11 @@ class LauncherViewModel(
         layoutRepository.persistedState,
         overlayState
     ) { rawApps, badges, persisted, overlays ->
+        val activeCustomization = persisted?.customization ?: defaultCustomization
         val gridSpec = FormFactorPolicy.resolve(
             smallestScreenWidthDp = overlays.smallestScreenWidthDp,
-            flags = featureFlags
+            flags = featureFlags,
+            customization = activeCustomization
         )
 
         val badgedApps = rawApps.map { app ->
@@ -119,7 +127,7 @@ class LauncherViewModel(
             dockMaxItems = gridSpec.dockMaxItems
         )
 
-        if (persisted == null && badgedApps.isNotEmpty()) {
+        if (badgedApps.isNotEmpty() && (persisted == null || !persisted.hasInjectedHnmSettingsTile)) {
             viewModelScope.launch {
                 layoutRepository.ensureInitialSeed(
                     installedApps = badgedApps,
@@ -132,7 +140,8 @@ class LauncherViewModel(
         val dockApps = effectivePersisted.dock.mapNotNull { appById[it.stableId] }
         val resolvedFolders = ArrayList<ResolvedHomeItem.Folder>()
 
-        val resolvedPages = effectivePersisted.pages.map { page ->
+        val safeMaxPerPage = gridSpec.maxItemsPerPage.coerceAtLeast(16)
+        val resolvedPages = effectivePersisted.pages.flatMap { page ->
             val items = page.items.mapNotNull { gridItem ->
                 when (gridItem) {
                     is HomeGridItem.AppTile -> {
@@ -153,7 +162,14 @@ class LauncherViewModel(
                     }
                 }
             }
-            ResolvedHomePage(id = page.id, items = items)
+            if (items.isEmpty()) {
+                listOf(ResolvedHomePage(id = page.id, items = emptyList()))
+            } else {
+                items.chunked(safeMaxPerPage).mapIndexed { idx, chunk ->
+                    val pageId = if (idx == 0) page.id else "${page.id}_$idx"
+                    ResolvedHomePage(id = pageId, items = chunk)
+                }
+            }
         }.ifEmpty { listOf(ResolvedHomePage(id = "page_1", items = emptyList())) }
 
         val libraryGroups = AppCategoryClassifier.buildAppLibraryGroups(
@@ -174,14 +190,13 @@ class LauncherViewModel(
             badgedApps
                 .filter {
                     it.label.lowercase(trLocale).contains(queryTrimmed) ||
-                        it.key.packageName.lowercase().contains(queryTrimmed)
+                        it.key.packageName.lowercase(trLocale).contains(queryTrimmed)
                 }
                 .sortedByDescending {
                     it.label.lowercase(trLocale).startsWith(queryTrimmed)
                 }
         }
 
-        // Açık klasör penceresi varsa içeriğini güncel rozet ve isimle senkronize tut
         val syncedFolderModal = overlays.openFolderModal?.let { modal ->
             if (modal.folderId != null) {
                 val liveFolder = resolvedFolders.firstOrNull { it.id == modal.folderId }
@@ -197,6 +212,7 @@ class LauncherViewModel(
 
         LauncherUiState(
             gridSpec = gridSpec,
+            customization = activeCustomization,
             allApps = badgedApps,
             dockApps = dockApps,
             homePages = resolvedPages,
@@ -209,6 +225,8 @@ class LauncherViewModel(
             totalUnreadBadges = badges.values.sum(),
             isSpotlightOpen = overlays.isSpotlightOpen,
             spotlightQuery = overlays.spotlightQuery,
+            isControlCenterOpen = overlays.isControlCenterOpen,
+            isHnmSettingsOpen = overlays.isHnmSettingsOpen,
             isEditMode = overlays.isEditMode,
             openFolderModal = syncedFolderModal,
             quickMenu = overlays.quickMenu,
@@ -221,6 +239,7 @@ class LauncherViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = LauncherUiState(
             gridSpec = defaultGridSpec,
+            customization = defaultCustomization,
             allApps = emptyList(),
             dockApps = emptyList(),
             homePages = listOf(ResolvedHomePage(id = "page_1", items = emptyList())),
@@ -233,6 +252,8 @@ class LauncherViewModel(
             totalUnreadBadges = 0,
             isSpotlightOpen = false,
             spotlightQuery = "",
+            isControlCenterOpen = false,
+            isHnmSettingsOpen = false,
             isEditMode = false,
             openFolderModal = null,
             quickMenu = null,
@@ -264,6 +285,17 @@ class LauncherViewModel(
         appsRepository.loadIconIfNeeded(key)
 
     fun launchApp(app: AppItem) {
+        val interceptSettings = uiState.value.customization.interceptSystemSettingsApp
+        if (app.key.stableId == InstalledAppsRepository.HNM_SETTINGS_KEY.stableId ||
+            (interceptSettings && app.key.packageName == "com.android.settings")
+        ) {
+            openHnmSettings()
+            viewModelScope.launch {
+                layoutRepository.recordAppLaunch(app.key)
+            }
+            return
+        }
+
         dismissAllOverlays()
         if (appsRepository.launchApp(app.key)) {
             viewModelScope.launch {
@@ -282,6 +314,8 @@ class LauncherViewModel(
             it.copy(
                 isSpotlightOpen = true,
                 spotlightQuery = "",
+                isControlCenterOpen = false,
+                isHnmSettingsOpen = false,
                 isEditMode = false,
                 openFolderModal = null,
                 quickMenu = null
@@ -295,6 +329,55 @@ class LauncherViewModel(
 
     fun closeSpotlight() {
         overlayState.update { it.copy(isSpotlightOpen = false, spotlightQuery = "") }
+    }
+
+    fun openControlCenter() {
+        overlayState.update {
+            it.copy(
+                isControlCenterOpen = true,
+                isSpotlightOpen = false,
+                isHnmSettingsOpen = false,
+                isEditMode = false,
+                openFolderModal = null,
+                quickMenu = null
+            )
+        }
+    }
+
+    fun closeControlCenter() {
+        overlayState.update { it.copy(isControlCenterOpen = false) }
+    }
+
+    fun openHnmSettings() {
+        overlayState.update {
+            it.copy(
+                isHnmSettingsOpen = true,
+                isControlCenterOpen = false,
+                isSpotlightOpen = false,
+                isEditMode = false,
+                openFolderModal = null,
+                quickMenu = null
+            )
+        }
+    }
+
+    fun closeHnmSettings() {
+        overlayState.update { it.copy(isHnmSettingsOpen = false) }
+    }
+
+    fun updateCustomization(
+        transform: (LauncherCustomizationSettings) -> LauncherCustomizationSettings
+    ) {
+        viewModelScope.launch {
+            layoutRepository.updateCustomization(transform)
+        }
+    }
+
+    fun toggleDockPin(app: AppItem) {
+        val maxDock = uiState.value.gridSpec.dockMaxItems
+        viewModelScope.launch {
+            layoutRepository.toggleDockPin(app.key, maxDock)
+        }
     }
 
     fun toggleEditMode() {
@@ -350,6 +433,8 @@ class LauncherViewModel(
                 )
             )
         }
+        if (app.key.stableId == InstalledAppsRepository.HNM_SETTINGS_KEY.stableId) return
+
         viewModelScope.launch {
             val shortcuts = appsRepository.queryShortcutsForPackage(
                 packageName = app.key.packageName,
@@ -439,6 +524,8 @@ class LauncherViewModel(
             it.copy(
                 isSpotlightOpen = false,
                 spotlightQuery = "",
+                isControlCenterOpen = false,
+                isHnmSettingsOpen = false,
                 isEditMode = false,
                 openFolderModal = null,
                 quickMenu = null

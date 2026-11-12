@@ -62,11 +62,14 @@ fun QuickActionMenuOverlay(
     existingFolders: List<ResolvedHomeItem.Folder>,
     containingFolderId: String?,
     isAlreadyOnHome: Boolean,
+    isInDock: Boolean,
+    canAddMoreToDock: Boolean,
     cachedIconProvider: (AppComponentKey) -> ImageBitmap?,
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?,
     onLaunchShortcut: (AppShortcutItem) -> Unit,
     onAddToHome: (AppItem) -> Unit,
     onRemoveFromHome: (AppItem) -> Unit,
+    onToggleDockPin: (AppItem) -> Unit,
     onCreateNewFolderWithApp: (AppItem) -> Unit,
     onMoveToFolder: (AppItem, String) -> Unit,
     onExtractFromFolderToHome: (String, AppItem) -> Unit,
@@ -136,8 +139,7 @@ fun QuickActionMenuOverlay(
                 GlassSurface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
-                    tone = GlassTone.ELEVATED_MODAL,
-                    shadowElevation = 22.dp
+                    tone = GlassTone.ELEVATED_MODAL
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         // Sistem kısayolları (LauncherApps.ShortcutQuery)
@@ -149,6 +151,29 @@ fun QuickActionMenuOverlay(
                                 tint = HnmPalette.AccentCyan,
                                 onClick = {
                                     onLaunchShortcut(shortcut)
+                                    onDismiss()
+                                }
+                            )
+                            MenuDivider()
+                        }
+
+                        if (isInDock) {
+                            ContextActionRow(
+                                label = "Dock'tan Ana Ekrana Çıkar",
+                                icon = Icons.Rounded.RemoveCircleOutline,
+                                onClick = {
+                                    onToggleDockPin(app)
+                                    onDismiss()
+                                }
+                            )
+                            MenuDivider()
+                        } else if (canAddMoreToDock) {
+                            ContextActionRow(
+                                label = "Alt Dock'a Sabitle",
+                                icon = Icons.AutoMirrored.Rounded.AddToHomeScreen,
+                                tint = HnmPalette.AccentCyan,
+                                onClick = {
+                                    onToggleDockPin(app)
                                     onDismiss()
                                 }
                             )

@@ -135,7 +135,7 @@ fun AppIconTile(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            modifier = Modifier.size(iconSize + 8.dp),
+            modifier = Modifier.size(iconSize + if (iconSize <= 42.dp) 4.dp else 8.dp),
             contentAlignment = Alignment.Center
         ) {
             AppSquircleArtwork(
@@ -157,7 +157,7 @@ fun AppIconTile(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .offset(x = (-2).dp, y = (-2).dp)
-                        .size(22.dp)
+                        .size(if (iconSize <= 42.dp) 18.dp else 22.dp)
                         .clip(CircleShape)
                         .background(Color(0xE6CBD5E1))
                         .combinedClickable(
@@ -170,21 +170,26 @@ fun AppIconTile(
                         imageVector = Icons.Rounded.Remove,
                         contentDescription = "Ana ekrandan kaldır",
                         tint = Color(0xFF0F172A),
-                        modifier = Modifier.size(15.dp)
+                        modifier = Modifier.size(if (iconSize <= 42.dp) 12.dp else 15.dp)
                     )
                 }
             }
         }
 
         if (showLabel) {
-            Spacer(modifier = Modifier.height(4.dp))
+            val isCompact = iconSize <= 44.dp
+            Spacer(modifier = Modifier.height(if (isCompact) 2.dp else 4.dp))
             Text(
                 text = app.label,
-                style = MaterialTheme.typography.labelMedium,
+                style = if (isCompact) {
+                    MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp)
+                } else {
+                    MaterialTheme.typography.labelMedium
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(max = iconSize + 18.dp)
+                modifier = Modifier.widthIn(max = iconSize + if (isCompact) 10.dp else 18.dp)
             )
         }
     }
@@ -233,13 +238,15 @@ fun AppSquircleArtwork(
 }
 
 /**
- * Ana ekrandaki 2x2 mini önizlemeli buzlu cam klasör kutucuğu.
+ * Ana ekrandaki 2x2 veya 3x3 mini önizlemeli buzlu cam klasör kutucuğu.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FolderIconTile(
     folder: ResolvedHomeItem.Folder,
     iconSize: Dp,
+    previewColumns: Int = 2,
+    showLabel: Boolean = true,
     cachedIconProvider: (AppComponentKey) -> ImageBitmap?,
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?,
     onClick: () -> Unit,
@@ -255,6 +262,8 @@ fun FolderIconTile(
         animationSpec = HnmMotion.iconPressSpring(),
         label = "folderPressScale"
     )
+
+    val gridN = previewColumns.coerceIn(2, 3)
 
     Column(
         modifier = modifier
@@ -274,7 +283,7 @@ fun FolderIconTile(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            modifier = Modifier.size(iconSize + 8.dp),
+            modifier = Modifier.size(iconSize + if (iconSize <= 42.dp) 4.dp else 8.dp),
             contentAlignment = Alignment.Center
         ) {
             GlassSurface(
@@ -282,23 +291,27 @@ fun FolderIconTile(
                 shape = SquircleShape.Icon,
                 tone = GlassTone.DOCK
             ) {
-                val previewApps = folder.apps.take(4)
-                val miniSize = (iconSize - 18.dp) / 2
+                val maxPreviewCount = gridN * gridN
+                val previewApps = folder.apps.take(maxPreviewCount)
+                val innerPad = if (gridN >= 3 || iconSize <= 42.dp) 4.dp else 6.dp
+                val cellGap = if (gridN >= 3 || iconSize <= 42.dp) 2.dp else 4.dp
+                val miniSize = ((iconSize - innerPad * 2 - cellGap * (gridN - 1)) / gridN)
+                    .coerceAtLeast(8.dp)
 
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(6.dp),
+                        .padding(innerPad),
                     verticalArrangement = Arrangement.SpaceBetween,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    for (rowIdx in 0..1) {
+                    for (rowIdx in 0 until gridN) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(cellGap),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            for (colIdx in 0..1) {
-                                val index = rowIdx * 2 + colIdx
+                            for (colIdx in 0 until gridN) {
+                                val index = rowIdx * gridN + colIdx
                                 val item = previewApps.getOrNull(index)
                                 if (item != null) {
                                     MiniAppIconPreview(
@@ -325,15 +338,22 @@ fun FolderIconTile(
             )
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = folder.title,
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = iconSize + 18.dp)
-        )
+        if (showLabel) {
+            val isCompact = iconSize <= 44.dp
+            Spacer(modifier = Modifier.height(if (isCompact) 2.dp else 4.dp))
+            Text(
+                text = folder.title,
+                style = if (isCompact) {
+                    MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp)
+                } else {
+                    MaterialTheme.typography.labelMedium
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = iconSize + if (isCompact) 10.dp else 18.dp)
+            )
+        }
     }
 }
 

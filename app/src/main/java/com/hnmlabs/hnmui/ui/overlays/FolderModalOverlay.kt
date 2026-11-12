@@ -50,7 +50,7 @@ import com.hnmlabs.hnmui.ui.theme.HnmPalette
 
 /**
  * Hem Ana Ekran klasörlerini (yeniden adlandırılabilir) hem de App Library genişletilmiş
- * kategori klasörlerini yay fiziğiyle açan buzlu cam pencere katmanı.
+ * kategori klasörlerini 3x3'ten 7x7'ye kadar dinamik ızgarayla açan buzlu cam pencere katmanı.
  */
 @Composable
 fun FolderModalOverlay(
@@ -58,6 +58,7 @@ fun FolderModalOverlay(
     title: String,
     isEditableTitle: Boolean,
     columns: Int,
+    showLabels: Boolean = true,
     apps: List<AppItem>,
     cachedIconProvider: (AppComponentKey) -> ImageBitmap?,
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?,
@@ -75,6 +76,43 @@ fun FolderModalOverlay(
     ) {
         val focusManager = LocalFocusManager.current
         var draftTitle by remember(title) { mutableStateOf(title) }
+        val safeCols = columns.coerceIn(3, 7)
+
+        val outerHorizontalPad = when (safeCols) {
+            3 -> 28.dp
+            4 -> 20.dp
+            5 -> 14.dp
+            6 -> 10.dp
+            else -> 8.dp
+        }
+        val innerGridPad = when (safeCols) {
+            3 -> 22.dp
+            4 -> 16.dp
+            5 -> 12.dp
+            6 -> 10.dp
+            else -> 8.dp
+        }
+        val hSpacing = when (safeCols) {
+            3 -> 14.dp
+            4 -> 10.dp
+            5 -> 8.dp
+            6 -> 6.dp
+            else -> 4.dp
+        }
+        val vSpacing = when (safeCols) {
+            3 -> 16.dp
+            4 -> 14.dp
+            5 -> 12.dp
+            6 -> 10.dp
+            else -> 8.dp
+        }
+        val folderIconDp = when (safeCols) {
+            3 -> 58.dp
+            4 -> 48.dp
+            5 -> 40.dp
+            6 -> 34.dp
+            else -> 29.dp
+        }
 
         Box(
             modifier = Modifier
@@ -95,7 +133,7 @@ fun FolderModalOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 28.dp)
+                    .padding(horizontal = outerHorizontalPad)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -129,26 +167,26 @@ fun FolderModalOverlay(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 GlassSurface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 240.dp, max = 420.dp),
+                        .heightIn(min = 240.dp, max = if (safeCols >= 6) 540.dp else 440.dp),
                     shape = SquircleShape.Card,
-                    tone = GlassTone.ELEVATED_MODAL,
-                    shadowElevation = 20.dp
+                    tone = GlassTone.ELEVATED_MODAL
                 ) {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(columns.coerceAtLeast(3)),
-                        contentPadding = PaddingValues(22.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                        columns = GridCells.Fixed(safeCols),
+                        contentPadding = PaddingValues(innerGridPad),
+                        horizontalArrangement = Arrangement.spacedBy(hSpacing),
+                        verticalArrangement = Arrangement.spacedBy(vSpacing)
                     ) {
                         items(apps, key = { it.key.stableId }) { app ->
                             AppIconTile(
                                 app = app,
-                                iconSize = 58.dp,
+                                iconSize = folderIconDp,
+                                showLabel = if (safeCols >= 7) false else showLabels,
                                 cachedIconProvider = cachedIconProvider,
                                 loadIconSuspend = loadIconSuspend,
                                 onClick = { onLaunchApp(app) },

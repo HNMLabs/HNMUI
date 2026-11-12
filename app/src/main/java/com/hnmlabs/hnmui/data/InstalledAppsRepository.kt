@@ -145,12 +145,33 @@ class InstalledAppsRepository(
             }
         }
 
+        // HNMUI dahili iOS tarzı "HNM Ayarlar" uygulamasını listeye ve önbelleğe ekle
+        if (iconCache.get(HNM_SETTINGS_KEY.stableId) == null) {
+            iconCache.put(HNM_SETTINGS_KEY.stableId, createHnmSettingsIconBitmap())
+        }
+        loaded += AppItem(
+            key = HNM_SETTINGS_KEY,
+            label = "HNM Ayarlar",
+            category = com.hnmlabs.hnmui.model.AppCategory.UTILITIES,
+            firstInstallTimeMillis = Long.MAX_VALUE / 2,
+            isSystemApp = true
+        )
+
         return loaded.sortedWith { a, b -> collator.compare(a.label, b.label) }
     }
 
-    fun getCachedIcon(key: AppComponentKey): ImageBitmap? = iconCache.get(key.stableId)
+    fun getCachedIcon(key: AppComponentKey): ImageBitmap? {
+        if (key.stableId == HNM_SETTINGS_KEY.stableId && iconCache.get(key.stableId) == null) {
+            iconCache.put(key.stableId, createHnmSettingsIconBitmap())
+        }
+        return iconCache.get(key.stableId)
+    }
 
     suspend fun loadIconIfNeeded(key: AppComponentKey): ImageBitmap? {
+        if (key.stableId == HNM_SETTINGS_KEY.stableId) {
+            return iconCache.get(key.stableId)
+                ?: createHnmSettingsIconBitmap().also { iconCache.put(key.stableId, it) }
+        }
         iconCache.get(key.stableId)?.let { return it }
         return withContext(Dispatchers.IO) {
             val la = launcherApps ?: return@withContext null
@@ -273,5 +294,93 @@ class InstalledAppsRepository(
         // 120 FPS akıcılığı için dokuyu arka plan iş parçacığında GPU belleğine hazırla
         bitmap.prepareToDraw()
         return bitmap.asImageBitmap()
+    }
+
+    companion object {
+        val HNM_SETTINGS_KEY = AppComponentKey(
+            packageName = "com.hnmlabs.hnmui",
+            className = "com.hnmlabs.hnmui.InternalSettings",
+            userSerial = 0L
+        )
+
+        fun isSystemSettingsApp(key: AppComponentKey): Boolean {
+            return key.stableId == HNM_SETTINGS_KEY.stableId ||
+                key.packageName == "com.android.settings"
+        }
+
+        /**
+         * iOS Ayarlar estetiğinde fırçalanmış titanyum zemin ve hassas dişli çarklı
+         * HNM Ayarlar ikonunu vektörel hassasiyetle üretir.
+         */
+        fun createHnmSettingsIconBitmap(sizePx: Int = 180): ImageBitmap {
+            val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val cx = sizePx / 2f
+            val cy = sizePx / 2f
+
+            val bgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                shader = android.graphics.LinearGradient(
+                    0f,
+                    0f,
+                    0f,
+                    sizePx.toFloat(),
+                    intArrayOf(0xFF475569.toInt(), 0xFF1E293B.toInt()),
+                    null,
+                    android.graphics.Shader.TileMode.CLAMP
+                )
+            }
+            canvas.drawRect(0f, 0f, sizePx.toFloat(), sizePx.toFloat(), bgPaint)
+
+            // Dış kadran halkası
+            val dialPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = sizePx * 0.025f
+                color = 0x44CBD5E1
+            }
+            canvas.drawCircle(cx, cy, sizePx * 0.39f, dialPaint)
+
+            // 8 dişli metalik çark kolları
+            val toothPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeCap = android.graphics.Paint.Cap.ROUND
+                strokeWidth = sizePx * 0.095f
+                color = 0xFFE2E8F0.toInt()
+            }
+            for (i in 0 until 8) {
+                val angle = Math.toRadians((i * 45.0))
+                val rInner = sizePx * 0.16f
+                val rOuter = sizePx * 0.31f
+                val x1 = cx + (Math.cos(angle) * rInner).toFloat()
+                val y1 = cy + (Math.sin(angle) * rInner).toFloat()
+                val x2 = cx + (Math.cos(angle) * rOuter).toFloat()
+                val y2 = cy + (Math.sin(angle) * rOuter).toFloat()
+                canvas.drawLine(x1, y1, x2, y2, toothPaint)
+            }
+
+            // Ana çark gövdesi
+            val ringPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = sizePx * 0.105f
+                color = 0xFFF8FAFC.toInt()
+            }
+            canvas.drawCircle(cx, cy, sizePx * 0.205f, ringPaint)
+
+            // İç HNMUI cam göbeği
+            val coreFill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.FILL
+                color = 0xFF0F172A.toInt()
+            }
+            canvas.drawCircle(cx, cy, sizePx * 0.115f, coreFill)
+
+            val accentRing = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = sizePx * 0.024f
+                color = 0xFF38BDF8.toInt()
+            }
+            canvas.drawCircle(cx, cy, sizePx * 0.085f, accentRing)
+
+            bitmap.prepareToDraw()
+            return bitmap.asImageBitmap()
+        }
     }
 }
