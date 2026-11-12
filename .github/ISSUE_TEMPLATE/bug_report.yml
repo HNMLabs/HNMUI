@@ -1,0 +1,45 @@
+name: 🐛 Bug Report / Hata Bildirimi
+description: Report a crash, stutter, or UI bug in HNMUI / Çökme, takılma veya arayüz hatası bildirin
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue! / Hata bildirdiğiniz için teşekkürler!
+        For security vulnerabilities, please use [Private Security Advisories](https://github.com/HNMLabs/HNMUI/security/advisories/new).
+
+  - type: input
+    id: version
+    attributes:
+      label: HNMUI Version / HNMUI Sürümü
+      placeholder: "v0.3.1-alpha"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device & OS / Cihaz ve Android Sürümü
+      description: Example / Örnek — Samsung Galaxy S24 (One UI 9 / Android 16, 120Hz)
+      placeholder: "Samsung ... / Android ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce / Hatayı Oluşturma Adımları
+      placeholder: |
+        1. Ana ekranda sağ üstten aşağı kaydır...
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs Actual Behavior / Beklenen ve Gerçekleşen Davranış
+      placeholder: What happened vs what you expected / Ne bekliyordunuz, ne oldu?
+    validations:
+      required: true

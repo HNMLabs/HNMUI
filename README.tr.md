@@ -5,11 +5,11 @@
 **iOS Sadeliği, Android Özgürlüğüyle Buluştu — Buzlu Cam Dokulu 120 FPS Ana Ekran**
 
 [![Son Sürüm](https://img.shields.io/badge/s%C3%BCr%C3%BCm-v0.3.1--alpha-0A84FF?style=for-the-badge)](https://github.com/HNMLabs/HNMUI/releases/tag/v0.3.1-alpha)
-[![Android](https://img.shields.io/badge/Android-9.0%2B%20(API%2028--35)-30D158?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-120%20FPS-38BDF8?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
+[![CI & Güvenlik](https://img.shields.io/github/actions/workflow/status/HNMLabs/HNMUI/android-ci.yml?branch=main&style=for-the-badge&label=CI%20%26%20G%C3%BCvenlik)](https://github.com/HNMLabs/HNMUI/actions/workflows/android-ci.yml)
+[![Gizlilik](https://img.shields.io/badge/Gizlilik-S%C4%B1f%C4%B1r%20%C4%B0nternet-10B981?style=for-the-badge)](SECURITY.md#türkçe)
+[![Lisans: MIT](https://img.shields.io/badge/Lisans-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
-[**🇬🇧 English (`README.md`)**](README.md) · [**⬇️ APK İndir (`v0.3.1-alpha`)**](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.1-alpha.apk)
+[**🇬🇧 English (`README.md`)**](README.md) · [**📚 Wiki**](docs/wiki/Home.md) · [**🔒 Güvenlik (`SECURITY.md`)**](SECURITY.md#türkçe) · [**📋 Sürüm Geçmişi**](CHANGELOG.md) · [**🤝 Katkı Rehberi**](CONTRIBUTING.md#türkçe) · [**⬇️ APK İndir (`v0.3.1-alpha`)**](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.1-alpha.apk)
 
 </div>
 

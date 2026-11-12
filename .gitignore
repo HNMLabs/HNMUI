@@ -1,4 +1,4 @@
-# Gradle & Build outputs
+# Gradle & Android Build outputs
 .gradle/
 **/build/
 local.properties
@@ -12,10 +12,20 @@ captures/
 .externalNativeBuild/
 .cxx/
 
-# Keystores
+# Signing Keys, Certificates & Credentials (NEVER COMMIT)
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.der
 keystore.properties
+google-services.json
+*service-account*.json
+*credentials*.json
+.env
+.env.*
 
 # OS / Misc
 .DS_Store

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🔒 Report a Security Vulnerability / Güvenlik Açığı Bildir
+    url: https://github.com/HNMLabs/HNMUI/security/advisories/new
+    about: Privately report security issues without opening a public issue.
+  - name: 📚 HNMUI Documentation & Wiki / Dokümantasyon ve Wiki
+    url: https://github.com/HNMLabs/HNMUI/blob/main/docs/wiki/Home.md
+    about: Read installation, gesture, customization, and architecture guides.

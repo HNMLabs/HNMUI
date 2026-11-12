@@ -1,0 +1,66 @@
+name: Android CI & Secret Audit
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  secret-and-manifest-audit:
+    name: Secret & Play Protect Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify zero keystores or credential files are tracked
+        run: |
+          FORBIDDEN=$(git ls-files | grep -iE '\.(jks|keystore|p12|pfx|pem|key|der|env)$|keystore\.properties|local\.properties|google-services\.json|service-account' || true)
+          if [ -n "$FORBIDDEN" ]; then
+            echo "::error::Forbidden key or credential file detected in git:"
+            echo "$FORBIDDEN"
+            exit 1
+          fi
+
+      - name: Verify zero hardcoded private keys or tokens
+        run: |
+          MATCHES=$(grep -rnE '(BEGIN [A-Z ]*PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16})' app/ build.gradle.kts settings.gradle.kts gradle/ || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Potential hardcoded secret detected:"
+            echo "$MATCHES"
+            exit 1
+          fi
+
+      - name: Verify offline guarantee (no INTERNET permission in main manifest)
+        run: |
+          if grep -q "android.permission.INTERNET" app/src/main/AndroidManifest.xml; then
+            echo "::error::HNMUI must remain 100% offline-by-design (no INTERNET permission allowed)!"
+            exit 1
+          fi
+
+  build-and-test:
+    name: Unit Tests, Lint & Build (JDK 17)
+    runs-on: ubuntu-latest
+    needs: secret-and-manifest-audit
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run Unit Tests & Release Vital Lint
+        run: ./gradlew testSideloadDebugUnitTest lintVitalSideloadRelease --no-daemon
+
+      - name: Assemble Sideload Debug APK
+        run: ./gradlew assembleSideloadDebug --no-daemon

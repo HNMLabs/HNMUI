@@ -1,0 +1,21 @@
+name: ✨ Feature Request / Özellik İsteği
+description: Suggest a minimalist feature, gesture, or customization / Yeni bir özellik veya özelleştirme önerin
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Idea / Özellik Özeti
+      description: Keep it aligned with HNMUI's calm iOS + 120 FPS frosted-glass philosophy.
+      placeholder: Describe the feature clearly / Özelliği kısaca açıklayın...
+    validations:
+      required: true
+
+  - type: textarea
+    id: ux
+    attributes:
+      label: Interaction & Design / Etkileşim ve Tasarım Detayı
+      placeholder: Where should it live (Home Grid, Dock, Control Center, Notification Center, HNM Settings)?
+    validations:
+      required: false
