@@ -4,13 +4,21 @@ import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hnmlabs.hnmui.core.formfactor.FormFactorPolicy
 import com.hnmlabs.hnmui.core.system.DefaultLauncherHelper
 import com.hnmlabs.hnmui.core.system.HighRefreshRateHelper
@@ -20,7 +28,8 @@ import com.hnmlabs.hnmui.ui.theme.HnmLauncherTheme
 
 /**
  * HNMUI Ana Ekran (CATEGORY_HOME) Aktivitesi.
- * 120Hz yüksek yenileme hızı kilidi, duvar kağıdı destekli uçtan uca pencere
+ * 120Hz yüksek yenileme hızı kilidi, duvar kağıdı destekli uçtan uca pencere,
+ * One UI üst durum çubuğunu gizleyip iOS durum çubuğu sunma modu
  * ve varsayılan Ana Ekran (RoleManager.ROLE_HOME) geçiş akışını yönetir.
  */
 class LauncherActivity : ComponentActivity() {
@@ -101,6 +110,13 @@ class LauncherActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         requestedOrientation = FormFactorPolicy.preferredScreenOrientation(app.featureFlags)
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
@@ -108,6 +124,7 @@ class LauncherActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         HighRefreshRateHelper.enableMaxRefreshRate(this)
+        applySystemStatusBarPolicy(hideForIosBar = viewModel.uiState.value.customization.useIosStatusBar)
         syncDeviceAndPermissionState()
 
         // İlk açılışta HNMUI henüz varsayılan Ana Ekran değilse sistem seçim penceresini otomatik sun
@@ -120,6 +137,11 @@ class LauncherActivity : ComponentActivity() {
         }
 
         setContent {
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+            LaunchedEffect(state.customization.useIosStatusBar) {
+                applySystemStatusBarPolicy(hideForIosBar = state.customization.useIosStatusBar)
+            }
+
             HnmLauncherTheme {
                 LauncherScreen(
                     viewModel = viewModel,
@@ -154,8 +176,20 @@ class LauncherActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         HighRefreshRateHelper.enableMaxRefreshRate(this)
+        applySystemStatusBarPolicy(hideForIosBar = viewModel.uiState.value.customization.useIosStatusBar)
         syncDeviceAndPermissionState()
         app.installedAppsRepository.refreshAppsAsync()
+    }
+
+    private fun applySystemStatusBarPolicy(hideForIosBar: Boolean) {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (hideForIosBar) {
+            controller.hide(WindowInsetsCompat.Type.statusBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.statusBars())
+        }
     }
 
     override fun onStop() {

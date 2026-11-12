@@ -113,7 +113,8 @@ data class LauncherCustomizationSettings(
     val dockScalePercent: Int = 100,
     val glassOpacityPercent: Int = 100,
     val interceptSystemSettingsApp: Boolean = true,
-    val hapticFeedbackEnabled: Boolean = true
+    val hapticFeedbackEnabled: Boolean = true,
+    val useIosStatusBar: Boolean = true
 )
 
 /**
@@ -128,6 +129,18 @@ data class PersistedHomeState(
     val launchCounts: Map<String, Int> = emptyMap(),
     val customization: LauncherCustomizationSettings = LauncherCustomizationSettings(),
     val hasInjectedHnmSettingsTile: Boolean = false
+)
+
+/**
+ * Bildirim Merkezi katmanında gösterilen canlı bildirim kartı modeli.
+ */
+@Immutable
+data class LiveNotificationCard(
+    val key: String,
+    val packageName: String,
+    val title: String,
+    val message: String,
+    val postTimeMillis: Long
 )
 
 /**

@@ -16,10 +16,13 @@ import com.hnmlabs.hnmui.model.AppLibraryGroup
 import com.hnmlabs.hnmui.model.AppShortcutItem
 import com.hnmlabs.hnmui.model.HomeGridItem
 import com.hnmlabs.hnmui.model.LauncherCustomizationSettings
+import com.hnmlabs.hnmui.model.LiveNotificationCard
 import com.hnmlabs.hnmui.model.QuickNoteItem
 import com.hnmlabs.hnmui.model.ResolvedHomeItem
 import com.hnmlabs.hnmui.model.ResolvedHomePage
 import com.hnmlabs.hnmui.service.HnmNotificationListenerService
+import com.hnmlabs.hnmui.ui.drag.DragOrigin
+import com.hnmlabs.hnmui.ui.drag.HoverDropTarget
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -48,6 +51,7 @@ data class LauncherOverlayState(
     val isSpotlightOpen: Boolean = false,
     val spotlightQuery: String = "",
     val isControlCenterOpen: Boolean = false,
+    val isNotificationCenterOpen: Boolean = false,
     val isHnmSettingsOpen: Boolean = false,
     val isEditMode: Boolean = false,
     val openFolderModal: ActiveFolderModal? = null,
@@ -69,11 +73,13 @@ data class LauncherUiState(
     val suggestedApps: List<AppItem>,
     val spotlightMatches: List<AppItem>,
     val quickNotes: List<QuickNoteItem>,
+    val liveNotifications: List<LiveNotificationCard>,
     val boundWidgetIds: List<Int>,
     val totalUnreadBadges: Int,
     val isSpotlightOpen: Boolean,
     val spotlightQuery: String,
     val isControlCenterOpen: Boolean,
+    val isNotificationCenterOpen: Boolean,
     val isHnmSettingsOpen: Boolean,
     val isEditMode: Boolean,
     val openFolderModal: ActiveFolderModal?,
@@ -86,7 +92,7 @@ data class LauncherUiState(
 /**
  * HNMUI tek yönlü durum yönetimi (UDF) ViewModel sınıfı.
  * Yüklü uygulamaları, canlı bildirim rozetlerini, 7x7'ye kadar özelleştirilebilir DataStore
- * düzenini, Denetim Merkezi'ni ve HNM Ayarlar katmanlarını yönetir.
+ * düzenini, sürükle-bırak motorunu, Denetim Merkezi, Bildirim Merkezi ve HNM Ayarlar katmanlarını yönetir.
  */
 class LauncherViewModel(
     private val appsRepository: InstalledAppsRepository,
@@ -106,9 +112,10 @@ class LauncherViewModel(
     val uiState: StateFlow<LauncherUiState> = combine(
         appsRepository.apps,
         HnmNotificationListenerService.badgeCounts,
+        HnmNotificationListenerService.activeCards,
         layoutRepository.persistedState,
         overlayState
-    ) { rawApps, badges, persisted, overlays ->
+    ) { rawApps, badges, liveCards, persisted, overlays ->
         val activeCustomization = persisted?.customization ?: defaultCustomization
         val gridSpec = FormFactorPolicy.resolve(
             smallestScreenWidthDp = overlays.smallestScreenWidthDp,
@@ -221,11 +228,13 @@ class LauncherViewModel(
             suggestedApps = suggestedApps,
             spotlightMatches = spotlightMatches,
             quickNotes = effectivePersisted.quickNotes,
+            liveNotifications = liveCards,
             boundWidgetIds = effectivePersisted.boundWidgetIds,
             totalUnreadBadges = badges.values.sum(),
             isSpotlightOpen = overlays.isSpotlightOpen,
             spotlightQuery = overlays.spotlightQuery,
             isControlCenterOpen = overlays.isControlCenterOpen,
+            isNotificationCenterOpen = overlays.isNotificationCenterOpen,
             isHnmSettingsOpen = overlays.isHnmSettingsOpen,
             isEditMode = overlays.isEditMode,
             openFolderModal = syncedFolderModal,
@@ -248,11 +257,13 @@ class LauncherViewModel(
             suggestedApps = emptyList(),
             spotlightMatches = emptyList(),
             quickNotes = emptyList(),
+            liveNotifications = emptyList(),
             boundWidgetIds = emptyList(),
             totalUnreadBadges = 0,
             isSpotlightOpen = false,
             spotlightQuery = "",
             isControlCenterOpen = false,
+            isNotificationCenterOpen = false,
             isHnmSettingsOpen = false,
             isEditMode = false,
             openFolderModal = null,
@@ -315,6 +326,7 @@ class LauncherViewModel(
                 isSpotlightOpen = true,
                 spotlightQuery = "",
                 isControlCenterOpen = false,
+                isNotificationCenterOpen = false,
                 isHnmSettingsOpen = false,
                 isEditMode = false,
                 openFolderModal = null,
@@ -335,6 +347,7 @@ class LauncherViewModel(
         overlayState.update {
             it.copy(
                 isControlCenterOpen = true,
+                isNotificationCenterOpen = false,
                 isSpotlightOpen = false,
                 isHnmSettingsOpen = false,
                 isEditMode = false,
@@ -348,11 +361,38 @@ class LauncherViewModel(
         overlayState.update { it.copy(isControlCenterOpen = false) }
     }
 
+    fun openNotificationCenter() {
+        overlayState.update {
+            it.copy(
+                isNotificationCenterOpen = true,
+                isControlCenterOpen = false,
+                isSpotlightOpen = false,
+                isHnmSettingsOpen = false,
+                isEditMode = false,
+                openFolderModal = null,
+                quickMenu = null
+            )
+        }
+    }
+
+    fun closeNotificationCenter() {
+        overlayState.update { it.copy(isNotificationCenterOpen = false) }
+    }
+
+    fun dismissNotificationCard(key: String) {
+        HnmNotificationListenerService.dismissNotificationByKey(key)
+    }
+
+    fun clearAllNotificationCards() {
+        HnmNotificationListenerService.dismissAllNotifications()
+    }
+
     fun openHnmSettings() {
         overlayState.update {
             it.copy(
                 isHnmSettingsOpen = true,
                 isControlCenterOpen = false,
+                isNotificationCenterOpen = false,
                 isSpotlightOpen = false,
                 isEditMode = false,
                 openFolderModal = null,
@@ -382,6 +422,50 @@ class LauncherViewModel(
 
     fun toggleEditMode() {
         overlayState.update { it.copy(isEditMode = !it.isEditMode, quickMenu = null) }
+    }
+
+    fun enterEditModeForDrag() {
+        overlayState.update { it.copy(isEditMode = true, quickMenu = null) }
+    }
+
+    fun commitDragDrop(origin: DragOrigin, target: HoverDropTarget?) {
+        val resolvedTarget = target ?: return
+        val spec = uiState.value.gridSpec
+
+        val repoSource = when (origin) {
+            is DragOrigin.HomeSlot -> HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(
+                pageIndex = origin.pageIndex,
+                slotIndex = origin.slotIndex
+            )
+            is DragOrigin.DockSlot -> HomeLayoutRepository.Companion.LayoutDragSource.DockSlot(
+                dockIndex = origin.dockIndex
+            )
+        }
+
+        val repoDestination = when (resolvedTarget) {
+            is HoverDropTarget.HomeCell ->
+                HomeLayoutRepository.Companion.LayoutDropDestination.HomeCell(
+                    pageIndex = resolvedTarget.pageIndex,
+                    slotIndex = resolvedTarget.slotIndex
+                )
+            is HoverDropTarget.MergeIntoFolder ->
+                HomeLayoutRepository.Companion.LayoutDropDestination.MergeIntoFolder(
+                    folderId = resolvedTarget.folderId
+                )
+            is HoverDropTarget.DockCell ->
+                HomeLayoutRepository.Companion.LayoutDropDestination.DockCell(
+                    insertIndex = resolvedTarget.insertIndex
+                )
+        }
+
+        viewModelScope.launch {
+            layoutRepository.applyDragDrop(
+                source = repoSource,
+                destination = repoDestination,
+                maxPerPage = spec.maxItemsPerPage,
+                maxDockItems = spec.dockMaxItems
+            )
+        }
     }
 
     fun openHomeFolder(folder: ResolvedHomeItem.Folder) {
@@ -525,6 +609,7 @@ class LauncherViewModel(
                 isSpotlightOpen = false,
                 spotlightQuery = "",
                 isControlCenterOpen = false,
+                isNotificationCenterOpen = false,
                 isHnmSettingsOpen = false,
                 isEditMode = false,
                 openFolderModal = null,

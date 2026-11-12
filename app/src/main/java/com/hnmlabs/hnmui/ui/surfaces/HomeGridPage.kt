@@ -1,13 +1,18 @@
 package com.hnmlabs.hnmui.ui.surfaces
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,7 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,21 +38,23 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.toSize
 import com.hnmlabs.hnmui.core.formfactor.LauncherGridSpec
 import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
@@ -58,46 +64,46 @@ import com.hnmlabs.hnmui.ui.components.AppIconTile
 import com.hnmlabs.hnmui.ui.components.FolderIconTile
 import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
+import com.hnmlabs.hnmui.ui.components.SquircleShape
+import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
+import com.hnmlabs.hnmui.ui.drag.DragOrigin
+import com.hnmlabs.hnmui.ui.drag.HoverDropTarget
+import com.hnmlabs.hnmui.ui.drag.LauncherDragDropController
+import com.hnmlabs.hnmui.ui.drag.launcherDraggableItem
+import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
 import kotlin.math.roundToInt
 
 /**
- * Ana ekran ızgara sayfası (4x4'ten 7x7'ye kadar dinamik ızgara destekli).
- * - Sağ üstten aşağı kaydırma -> iOS Denetim Merkezi (Control Center)
- * - Sol üstten aşağı kaydırma -> Bildirimler
- * - Ortadan aşağı kaydırma -> Spotlight Arama
- * - Boş alana uzun basma -> Düzenleme (Jiggle) Modu
+ * Ana ekran ızgara sayfası (4x4'ten 7x7'ye kadar dinamik ızgara ve 120 FPS sürükle-bırak destekli).
+ * Boş alana uzun basma -> Düzenleme (Jiggle) Modu.
+ * İkona basılı tutup hareket ettirme -> Haptic Menü'den kesintisiz sürüklemeye geçiş.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeGridPage(
+    homePageIndex: Int,
     page: ResolvedHomePage,
     gridSpec: LauncherGridSpec,
     isDefaultLauncher: Boolean,
     isEditMode: Boolean,
+    dragController: LauncherDragDropController,
     cachedIconProvider: (AppComponentKey) -> ImageBitmap?,
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?,
     onRequestDefaultLauncher: () -> Unit,
     onAppClick: (AppItem) -> Unit,
     onAppLongPress: (AppItem) -> Unit,
+    onDismissQuickMenuAndEnterEdit: () -> Unit,
+    onDragMoved: (Offset) -> Unit,
+    onDragEnded: (DragOrigin, HoverDropTarget?) -> Unit,
     onRemoveAppFromHome: (AppComponentKey) -> Unit,
     onFolderClick: (ResolvedHomeItem.Folder) -> Unit,
-    onPullDownSpotlight: () -> Unit,
-    onPullDownControlCenter: () -> Unit,
-    onPullDownNotifications: () -> Unit,
     onOpenHnmSettings: () -> Unit,
     onToggleEditMode: () -> Unit,
     onPickWallpaper: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
-    val density = LocalDensity.current
-    val topZoneHeightPx = remember(density) { with(density) { 135.dp.toPx() } }
-
-    var pageWidthPx by remember { mutableFloatStateOf(1f) }
-    var dragStartXPx by remember { mutableFloatStateOf(0f) }
-    var dragStartYPx by remember { mutableFloatStateOf(0f) }
-    var downwardDragPx by remember { mutableFloatStateOf(0f) }
 
     val bottomDockClearanceDp = if (gridSpec.dockVisible) {
         (134 * gridSpec.dockScaleFactor).roundToInt().coerceIn(108, 168).dp
@@ -105,60 +111,37 @@ fun HomeGridPage(
         48.dp
     }
 
+    val hoveredTarget = dragController.hoveredTarget
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .onSizeChanged { pageWidthPx = it.width.toFloat().coerceAtLeast(1f) }
-            .statusBarsPadding()
-            .pointerInput(topZoneHeightPx) {
-                detectVerticalDragGestures(
-                    onDragStart = { startOffset ->
-                        dragStartXPx = startOffset.x
-                        dragStartYPx = startOffset.y
-                        downwardDragPx = 0f
-                    },
-                    onVerticalDrag = { _, dragAmount ->
-                        downwardDragPx += dragAmount
-                        if (downwardDragPx > 88f) {
-                            downwardDragPx = 0f
-                            when {
-                                dragStartYPx < topZoneHeightPx && dragStartXPx > pageWidthPx * 0.54f -> {
-                                    onPullDownControlCenter()
-                                }
-                                dragStartYPx < topZoneHeightPx -> {
-                                    onPullDownNotifications()
-                                }
-                                else -> {
-                                    onPullDownSpotlight()
-                                }
-                            }
-                        }
-                    }
-                )
-            }
+            .hnmSafeTopPadding()
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = {
-                    if (isEditMode) onToggleEditMode()
+                    if (isEditMode && !dragController.isDragging) onToggleEditMode()
                 },
                 onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onToggleEditMode()
+                    if (!dragController.isDragging) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onToggleEditMode()
+                    }
                 }
             )
             .padding(
                 start = gridSpec.horizontalPaddingDp.dp,
                 end = gridSpec.horizontalPaddingDp.dp,
-                top = 10.dp,
+                top = 8.dp,
                 bottom = bottomDockClearanceDp
             )
     ) {
         // HNMUI henüz varsayılan Ana Ekran değilse doğrudan ana sayfada tek dokunuşlu kurulum çubuğu göster
         AnimatedVisibility(
             visible = !isDefaultLauncher && !isEditMode,
-            enter = fadeIn(),
-            exit = fadeOut()
+            enter = fadeIn(animationSpec = HnmMotion.sheetSpring()),
+            exit = fadeOut(animationSpec = HnmMotion.sheetSpring())
         ) {
             GlassSurface(
                 shape = RoundedCornerShape(20.dp),
@@ -198,11 +181,13 @@ fun HomeGridPage(
             }
         }
 
-        // Düzenleme modu üst aksiyon çubuğu (Duvar Kağıdı, Düzen/7x7 Ayarlar & Bitti)
+        // Düzenleme modu üst aksiyon çubuğu (Duvar Kağıdı, Izgara & Dock Ayarları, Bitti)
         AnimatedVisibility(
             visible = isEditMode,
-            enter = fadeIn(),
-            exit = fadeOut()
+            enter = fadeIn(animationSpec = HnmMotion.sheetSpring()) +
+                scaleIn(initialScale = 0.95f, animationSpec = HnmMotion.sheetSpring()),
+            exit = fadeOut(animationSpec = HnmMotion.sheetSpring()) +
+                scaleOut(targetScale = 0.95f, animationSpec = HnmMotion.sheetSpring())
         ) {
             Row(
                 modifier = Modifier
@@ -277,7 +262,16 @@ fun HomeGridPage(
 
         // Dinamik columns x rows ana ekran ızgarası (4x4'ten 7x7'ye kadar)
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { coords ->
+                    if (coords.isAttached) {
+                        dragController.updateGridBounds(
+                            homePageIndex = homePageIndex,
+                            rect = Rect(coords.positionInRoot(), coords.size.toSize())
+                        )
+                    }
+                },
             verticalArrangement = Arrangement.SpaceEvenly
         ) {
             for (rowIndex in 0 until gridSpec.rows) {
@@ -290,10 +284,40 @@ fun HomeGridPage(
                         val slotIndex = rowIndex * gridSpec.columns + colIndex
                         val item = page.items.getOrNull(slotIndex)
 
+                        val isCellHovered = hoveredTarget is HoverDropTarget.HomeCell &&
+                            hoveredTarget.pageIndex == homePageIndex &&
+                            hoveredTarget.slotIndex == slotIndex
+
+                        val isFolderMergeHovered = hoveredTarget is HoverDropTarget.MergeIntoFolder &&
+                            hoveredTarget.pageIndex == homePageIndex &&
+                            hoveredTarget.slotIndex == slotIndex
+
+                        val highlightAlpha by animateFloatAsState(
+                            targetValue = if (isCellHovered && dragController.isDragging) 1f else 0f,
+                            animationSpec = HnmMotion.slotHighlightSpring(),
+                            label = "cellHighlightAlpha"
+                        )
+
                         Box(
                             modifier = Modifier.weight(1f),
                             contentAlignment = Alignment.TopCenter
                         ) {
+                            if (highlightAlpha > 0.02f) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = if (gridSpec.iconSizeDp <= 42) 2.dp else 4.dp)
+                                        .size(gridSpec.iconSizeDp.dp)
+                                        .graphicsLayer { alpha = highlightAlpha }
+                                        .clip(SquircleShape.Icon)
+                                        .background(Color(0x2838BDF8))
+                                        .border(
+                                            width = 1.2.dp,
+                                            color = Color(0x9938BDF8),
+                                            shape = SquircleShape.Icon
+                                        )
+                                )
+                            }
+
                             when (item) {
                                 is ResolvedHomeItem.App -> {
                                     AppIconTile(
@@ -301,15 +325,33 @@ fun HomeGridPage(
                                         iconSize = gridSpec.iconSizeDp.dp,
                                         showLabel = gridSpec.showHomeLabels,
                                         isEditMode = isEditMode,
+                                        enableInternalClickHandling = false,
                                         cachedIconProvider = cachedIconProvider,
                                         loadIconSuspend = loadIconSuspend,
-                                        onClick = {
-                                            if (!isEditMode) onAppClick(item.app)
-                                        },
-                                        onLongClick = { onAppLongPress(item.app) },
+                                        onClick = {},
+                                        onLongClick = {},
                                         onRemoveInEditMode = {
                                             onRemoveAppFromHome(item.app.key)
-                                        }
+                                        },
+                                        modifier = Modifier.launcherDraggableItem(
+                                            keyId = item.itemId,
+                                            originProvider = {
+                                                DragOrigin.HomeSlot(
+                                                    pageIndex = homePageIndex,
+                                                    slotIndex = slotIndex,
+                                                    item = item
+                                                )
+                                            },
+                                            controller = dragController,
+                                            isEditMode = isEditMode,
+                                            onTap = {
+                                                if (!isEditMode) onAppClick(item.app)
+                                            },
+                                            onOpenQuickMenu = { onAppLongPress(item.app) },
+                                            onDismissQuickMenuAndEnterEdit = onDismissQuickMenuAndEnterEdit,
+                                            onDragMoved = onDragMoved,
+                                            onDragEnded = onDragEnded
+                                        )
                                     )
                                 }
 
@@ -319,10 +361,30 @@ fun HomeGridPage(
                                         iconSize = gridSpec.iconSizeDp.dp,
                                         previewColumns = gridSpec.folderPreviewColumns,
                                         showLabel = gridSpec.showHomeLabels,
+                                        isEditMode = isEditMode,
+                                        isDropTargetHighlighted = isFolderMergeHovered,
+                                        enableInternalClickHandling = false,
                                         cachedIconProvider = cachedIconProvider,
                                         loadIconSuspend = loadIconSuspend,
-                                        onClick = { onFolderClick(item) },
-                                        onLongClick = { onFolderClick(item) }
+                                        onClick = {},
+                                        onLongClick = {},
+                                        modifier = Modifier.launcherDraggableItem(
+                                            keyId = item.itemId,
+                                            originProvider = {
+                                                DragOrigin.HomeSlot(
+                                                    pageIndex = homePageIndex,
+                                                    slotIndex = slotIndex,
+                                                    item = item
+                                                )
+                                            },
+                                            controller = dragController,
+                                            isEditMode = isEditMode,
+                                            onTap = { onFolderClick(item) },
+                                            onOpenQuickMenu = { onFolderClick(item) },
+                                            onDismissQuickMenuAndEnterEdit = onDismissQuickMenuAndEnterEdit,
+                                            onDragMoved = onDragMoved,
+                                            onDragEnded = onDragEnded
+                                        )
                                     )
                                 }
 
@@ -344,8 +406,8 @@ fun HomeGridPage(
 }
 
 /**
- * Ana ekran sayfalarının altında sabit duran iOS "Ara" hapı, sayfa göstergesi ve
- * büyütülüp küçültülebilen (dockScaleFactor) buzlu cam Dock bileşeni.
+ * Ana ekran sayfalarının altında sabit duran iOS "Ara" hapı, akıcı sayfa kapsülü ve
+ * sürükle-bırak destekli (uygulama eklenip çıkarılabilen) buzlu cam Dock bileşeni.
  */
 @Composable
 fun LauncherBottomDockBar(
@@ -354,11 +416,15 @@ fun LauncherBottomDockBar(
     currentHomePageIndex: Int,
     totalHomePages: Int,
     isEditMode: Boolean,
+    dragController: LauncherDragDropController,
     cachedIconProvider: (AppComponentKey) -> ImageBitmap?,
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?,
     onSearchPillClick: () -> Unit,
     onAppClick: (AppItem) -> Unit,
     onAppLongPress: (AppItem) -> Unit,
+    onDismissQuickMenuAndEnterEdit: () -> Unit,
+    onDragMoved: (Offset) -> Unit,
+    onDragEnded: (DragOrigin, HoverDropTarget?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scale = gridSpec.dockScaleFactor.coerceIn(0.75f, 1.25f)
@@ -366,6 +432,30 @@ fun LauncherBottomDockBar(
     val innerHPad = (16f * scale).roundToInt().coerceIn(10, 22).dp
     val innerVPad = (11f * scale).roundToInt().coerceIn(7, 16).dp
     val dockCornerRadius = (30f * scale).roundToInt().coerceIn(22, 38).dp
+
+    val isDockDropHovered = dragController.hoveredTarget is HoverDropTarget.DockCell &&
+        dragController.isDragging
+
+    val dockHoverScale by animateFloatAsState(
+        targetValue = if (isDockDropHovered) 1.025f else 1f,
+        animationSpec = HnmMotion.slotHighlightSpring(),
+        label = "dockHoverScale"
+    )
+    val dockBorderColor by animateColorAsState(
+        targetValue = if (isDockDropHovered) Color(0xAA38BDF8) else Color.Transparent,
+        animationSpec = HnmMotion.slotHighlightSpring(),
+        label = "dockBorderColor"
+    )
+
+    val showDockContainer = gridSpec.dockVisible &&
+        (dockApps.isNotEmpty() || isEditMode || dragController.isDragging)
+
+    DisposableEffect(showDockContainer) {
+        if (!showDockContainer) {
+            dragController.updateDockBounds(null)
+        }
+        onDispose {}
+    }
 
     Column(
         modifier = modifier
@@ -375,7 +465,7 @@ fun LauncherBottomDockBar(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // iOS tarzı "Ara" (Spotlight) hapı ve sayfa noktaları
+        // iOS tarzı "Ara" (Spotlight) hapı ve akıcı animasyonlu sayfa kapsülleri
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -405,59 +495,144 @@ fun LauncherBottomDockBar(
 
             if (totalHomePages > 1) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     repeat(totalHomePages) { idx ->
                         val active = idx == currentHomePageIndex
+                        val pillWidth by animateDpAsState(
+                            targetValue = if (active) 16.dp else 6.dp,
+                            animationSpec = HnmMotion.slotHighlightSpring(),
+                            label = "pageIndicatorWidth_$idx"
+                        )
+                        val pillColor by animateColorAsState(
+                            targetValue = if (active) Color.White else HnmPalette.SubtleBorder,
+                            animationSpec = HnmMotion.slotHighlightSpring(),
+                            label = "pageIndicatorColor_$idx"
+                        )
                         Box(
                             modifier = Modifier
-                                .size(if (active) 7.dp else 6.dp)
+                                .width(pillWidth)
+                                .height(6.dp)
                                 .clip(CircleShape)
-                                .background(
-                                    if (active) Color.White else HnmPalette.SubtleBorder
-                                )
+                                .background(pillColor)
                         )
                     }
                 }
             }
         }
 
-        if (gridSpec.dockVisible && dockApps.isNotEmpty()) {
+        if (showDockContainer) {
+            val visibleDockApps = dockApps.take(gridSpec.dockMaxItems)
+            val hoveredDockIdx = (dragController.hoveredTarget as? HoverDropTarget.DockCell)?.insertIndex
+
             GlassSurface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        scaleX = dockHoverScale
+                        scaleY = dockHoverScale
+                    }
+                    .border(
+                        width = 1.2.dp,
+                        color = dockBorderColor,
+                        shape = RoundedCornerShape(dockCornerRadius)
+                    )
+                    .onGloballyPositioned { coords ->
+                        if (coords.isAttached) {
+                            dragController.updateDockBounds(
+                                Rect(coords.positionInRoot(), coords.size.toSize())
+                            )
+                        }
+                    },
                 shape = RoundedCornerShape(dockCornerRadius),
                 tone = GlassTone.DOCK
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = innerHPad, vertical = innerVPad),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    dockApps.take(gridSpec.dockMaxItems).forEach { app ->
-                        AppIconTile(
-                            app = app,
-                            iconSize = gridSpec.dockIconSizeDp.dp,
-                            showLabel = false,
-                            isEditMode = isEditMode,
-                            cachedIconProvider = cachedIconProvider,
-                            loadIconSuspend = loadIconSuspend,
-                            onClick = {
-                                if (!isEditMode) onAppClick(app)
-                            },
-                            onLongClick = { onAppLongPress(app) }
+                if (visibleDockApps.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(gridSpec.dockIconSizeDp.dp + innerVPad * 2),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Uygulamayı sabitlemek için Dock'a sürükleyin",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = HnmPalette.TextMuted
                         )
                     }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = innerHPad, vertical = innerVPad),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        visibleDockApps.forEachIndexed { idx, app ->
+                            val isThisSlotHovered = isDockDropHovered && hoveredDockIdx == idx
+                            val slotScale by animateFloatAsState(
+                                targetValue = if (isThisSlotHovered) 1.07f else 1f,
+                                animationSpec = HnmMotion.slotHighlightSpring(),
+                                label = "dockSlotScale_$idx"
+                            )
 
-                    if (gridSpec.dockShowRecentsDivider) {
-                        Spacer(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(42.dp)
-                                .background(HnmPalette.SubtleBorder)
-                        )
+                            Box(
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = slotScale
+                                    scaleY = slotScale
+                                },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isThisSlotHovered) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(gridSpec.dockIconSizeDp.dp + 6.dp)
+                                            .clip(SquircleShape.Icon)
+                                            .background(Color(0x2838BDF8))
+                                    )
+                                }
+
+                                AppIconTile(
+                                    app = app,
+                                    iconSize = gridSpec.dockIconSizeDp.dp,
+                                    showLabel = false,
+                                    isEditMode = isEditMode,
+                                    enableInternalClickHandling = false,
+                                    cachedIconProvider = cachedIconProvider,
+                                    loadIconSuspend = loadIconSuspend,
+                                    onClick = {},
+                                    onLongClick = {},
+                                    modifier = Modifier.launcherDraggableItem(
+                                        keyId = "dock:${app.key.stableId}",
+                                        originProvider = {
+                                            DragOrigin.DockSlot(
+                                                dockIndex = idx,
+                                                app = app
+                                            )
+                                        },
+                                        controller = dragController,
+                                        isEditMode = isEditMode,
+                                        onTap = {
+                                            if (!isEditMode) onAppClick(app)
+                                        },
+                                        onOpenQuickMenu = { onAppLongPress(app) },
+                                        onDismissQuickMenuAndEnterEdit = onDismissQuickMenuAndEnterEdit,
+                                        onDragMoved = onDragMoved,
+                                        onDragEnded = onDragEnded
+                                    )
+                                )
+                            }
+                        }
+
+                        if (gridSpec.dockShowRecentsDivider) {
+                            Spacer(
+                                modifier = Modifier
+                                    .width(1.dp)
+                                    .height(42.dp)
+                                    .background(HnmPalette.SubtleBorder)
+                            )
+                        }
                     }
                 }
             }

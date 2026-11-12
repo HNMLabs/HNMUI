@@ -5,12 +5,12 @@
 **iOS Simplicity Meets Android Freedom — Frosted-Glass 120 FPS Home Launcher**  
 **iOS Sadeliği, Android Özgürlüğüyle Buluştu — Buzlu Cam Dokulu 120 FPS Ana Ekran**
 
-[![Latest Release](https://img.shields.io/badge/release-v0.2.0--alpha-0A84FF?style=for-the-badge)](https://github.com/HNMLabs/HNMUI/releases/tag/v0.2.0-alpha)
+[![Latest Release](https://img.shields.io/badge/release-v0.3.0--alpha-0A84FF?style=for-the-badge)](https://github.com/HNMLabs/HNMUI/releases/tag/v0.3.0-alpha)
 [![Android](https://img.shields.io/badge/Android-9.0%2B%20(API%2028--35)-30D158?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-120%20FPS-38BDF8?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
 
-[**🇬🇧 English**](#english) · [**🇹🇷 Türkçe**](#türkçe) · [**📄 Türkçe Dosya (`README.tr.md`)**](README.tr.md) · [**⬇️ Download APK (`v0.2.0-alpha`)**](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.2.0-alpha.apk)
+[**🇬🇧 English**](#english) · [**🇹🇷 Türkçe**](#türkçe) · [**📄 Türkçe Dosya (`README.tr.md`)**](README.tr.md) · [**⬇️ Download APK (`v0.3.0-alpha`)**](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.0-alpha.apk)
 
 </div>
 
@@ -20,26 +20,24 @@
 
 ## 🇬🇧 English
 
-**HNMUI** is a lightweight, battery-friendly, native **Android Home Launcher** (`CATEGORY_HOME`) crafted by **HNMLabs**. Inspired by the calm spatial ergonomics of iOS and powered by Android's open ecosystem, HNMUI unifies your apps under continuous-curvature **Squircle** icons, translucent **Frosted Glass** surfaces, tactile spring physics, built-in **HNM Settings**, **Control Center**, and locked **120 FPS** fluidity.
+**HNMUI** is a lightweight, battery-friendly, native **Android Home Launcher** (`CATEGORY_HOME`) crafted by **HNMLabs**. Inspired by the calm spatial ergonomics of iOS and powered by Android's open ecosystem, HNMUI unifies your apps under continuous-curvature **Squircle** icons, translucent **Frosted Glass** surfaces, minimalist depth-recession spring physics, **HNM Settings**, **Control Center**, **Notification Cover Sheet**, and **120 FPS Drag & Drop**.
 
 ### ✨ Key Features
 
-- **120 FPS High Refresh Rate Engine:** Automatically locks onto the highest native display refresh rate (`90Hz` / `120Hz` / `144Hz`) via `HighRefreshRateHelper`, disables Android 15 (`API 35`) 60Hz adaptive power throttling, and pre-uploads app icon textures to the GPU (`Bitmap.prepareToDraw`) on background threads.
-- **Built-in iOS-Style HNM Settings (Zero OEM/One UI Clutter):** Includes a complete frosted-glass **HNM Settings** suite (*Battery & Health*, *Display & Brightness*, *Sounds & Haptics*, *Storage*, *Wi-Fi & Connectivity*, *Apps*, *General & RAM*) rendered natively inside HNMUI — even redirecting the stock Settings icon seamlessly.
-- **Pull-Down Frosted-Glass Control Center:** Swipe down from the top-right corner for vertical Brightness & Volume bars, Hardware Flashlight, Rotation Lock, Media Playback controls, and Connectivity pods.
+- **120 FPS High Refresh Rate & Calm Minimalist Motion:** Locks onto the highest native display refresh rate (`90Hz` / `120Hz` / `144Hz`) via `HighRefreshRateHelper`, applies critically-damped iOS spring physics, subtle page depth transitions, organic staggered Edit Mode jiggle, and GPU background depth recession (`94.5%`) when overlays open.
+- **iOS Status Bar + Dual Top Pull-Down Shades (Zero One UI Interruption):** Hides OEM status bars on the Home Screen in favor of `HnmIosStatusBar`:
+  - **Top-Right Pull-Down → Control Center:** Vertical Brightness & Volume bars, Flashlight, Rotation Lock, Media controls, and Connectivity pods.
+  - **Top-Left Pull-Down → HNM Notification & Cover Sheet:** Large iOS typography clock & date, live battery/ringer pills, notification cards, instant reminders, and Flashlight/Camera quick buttons.
+- **120 FPS SpringBoard Drag & Drop (Home Grid + Folders + Dock In/Out):** Long-press and move any icon to seamlessly transition into live 120 FPS dragging — reorder across pages (with edge auto-pagination), drop onto folders, **drag apps into the Dock** (with smart full-Dock swap), and **drag apps out of the Dock** back onto the Home Screen.
+- **Built-in iOS-Style HNM Settings:** Complete frosted-glass **HNM Settings** suite (*Battery & Health*, *Display & Brightness*, *Sounds & Haptics*, *Storage*, *Wi-Fi & Connectivity*, *Apps*, *General & RAM*), automatically intercepting the stock Settings icon.
 - **Minimalist Customization Studio (`4×4` up to `7×7`):** Customize Home Screen grids up to **`7×7`**, expanded Folder grids from `3×3` up to **`7×7`**, folder cover mini-previews (`2×2` / `3×3`), icon size, label visibility, glass opacity, and **Dock size (`75%–125%`) & icon capacity (`3–7` icons)**.
-- **Zero-Copy Live System Wallpaper:** Uses `windowShowWallpaper="true"` so static and live wallpapers shine directly behind translucent glass surfaces with zero extra RAM overhead.
-- **3-Plane Spatial Navigation (`HorizontalPager`):**
-  1. **Leftmost — Today View (`Page 0`):** Live greeting & date, battery + active Hz indicator, smart app suggestions, persistent **Quick Notes**, and native **Android Widgets (`AppWidgetHost`)**.
-  2. **Center — Paged Home Screen (`4×4`–`7×7`):** Resizable Frosted Glass **Dock**, iOS-style `"Search"` pill, inline-renamable glass folders, and long-press **Jiggle / Edit Mode**.
-  3. **Rightmost — App Library (`Page N+1`):** Automatically categorizes all installed apps into *Suggested*, *Recently Added*, *Social*, *Productivity & Finance*, *Entertainment & Media*, *Utilities & System*, and *Games* with 3 direct-launch icons + `2×2` expandable cluster and instant A–Z search.
-- **Pull-Down Spotlight Search & Haptic Touch Quick Actions:** Swipe down from the center to search apps or the web; long-press any icon for dynamic shortcuts, Dock pinning, or folder creation.
+- **Zero-Copy Live System Wallpaper & 3-Plane Navigation:** Today View (`Page 0` with Quick Notes & Android `AppWidgetHost`), Paged Home Screen (`4×4`–`7×7`), and automatic **App Library (`Page N+1`)**.
 - **Phone-First, Tablet-Reserved Architecture:** Optimized for portrait phone ergonomics out of the box, while keeping a `6×5` tablet layout profile ready in reserve behind `LauncherFeatureFlags(enableTabletLayout = false)`.
 
 ### 📦 Download & Installation
 
 Grab the Play Protect-compliant, release-signed APK directly:
-- **[Download HNMUI v0.2.0-alpha APK](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.2.0-alpha.apk)**
+- **[Download HNMUI v0.3.0-alpha APK](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.0-alpha.apk)**
 - After installing, tap **"Set as Default" / "Ayarla"** at the top of the Home Screen and select **HNMUI** as your Default Home App.
 
 ### 🏗️ Architecture & Build Variants
@@ -53,11 +51,12 @@ app/src/main/java/com/hnmlabs/hnmui/
 │                       # AppCategoryClassifier
 ├── model/              # @Immutable Launcher domain, customization & UI state models
 ├── ui/
-│   ├── components/     # GlassSurface (dynamic opacity), SquircleShape, AppIconTile, FolderIconTile
+│   ├── components/     # HnmIosStatusBar, GlassSurface, SquircleShape, AppIconTile, FolderIconTile
+│   ├── drag/           # LauncherDragDropController (120 FPS Home, Folder & Dock drag-in/drag-out)
 │   ├── surfaces/       # TodayViewPage, HomeGridPage + Resizable Dock, AppLibraryPage
-│   ├── overlays/       # HnmSettingsOverlay, ControlCenterOverlay, SpotlightOverlay,
-│   │                   # FolderModalOverlay (3x3..7x7), QuickActionMenuOverlay
-│   └── theme/          # HnmPalette, HnmTypography, Spring Physics (HnmMotion)
+│   ├── overlays/       # HnmSettingsOverlay, ControlCenterOverlay, NotificationCenterOverlay,
+│   │                   # SpotlightOverlay, FolderModalOverlay (3x3..7x7), QuickActionMenuOverlay
+│   └── theme/          # HnmPalette, HnmTypography, Minimalist Spring Physics (HnmMotion)
 └── widget/             # LauncherWidgetHostManager (AppWidgetHost)
 ```
 
@@ -77,7 +76,7 @@ Requires **JDK 17+** and **Android SDK 35**.
 # Build Play Store Debug APK (with live notification badges)
 ./gradlew assemblePlaystoreDebug
 
-# Run unit tests (FormFactorPolicy, AppCategoryClassifier, etc.)
+# Run unit tests (FormFactorPolicy, AppCategoryClassifier, Drag & Drop, etc.)
 ./gradlew testSideloadDebugUnitTest
 ```
 
@@ -87,21 +86,21 @@ Requires **JDK 17+** and **Android SDK 35**.
 
 ## 🇹🇷 Türkçe
 
-**HNMUI**, **HNMLabs** tarafından geliştirilen; iOS işletim sisteminin dinginliğini, buzlu cam (*frosted glass*) estetiğini ve yay fiziğine (*spring physics*) dayalı akıcılığını Android'in açık sistem gücüyle birleştiren saf, hızlı ve pil dostu bir **Android Ana Ekran (Home Launcher)** uygulamasıdır.
+**HNMUI**, **HNMLabs** tarafından geliştirilen; iOS işletim sisteminin dinginliğini, buzlu cam (*frosted glass*) estetiğini ve yay fiziğine (*spring physics*) dayalı sade animasyonlarını Android'in açık sistem gücüyle birleştiren saf, hızlı ve pil dostu bir **Android Ana Ekran (Home Launcher)** uygulamasıdır.
 
 ### ✨ Öne Çıkan Özellikler
 
-- **Gerçek 120 FPS / Yüksek Yenileme Hızı Motoru:** `HighRefreshRateHelper` ile ekranın doğal çözünürlüğünü koruyarak desteklenen en yüksek yenileme hızını (`90Hz` / `120Hz` / `144Hz`) kilitler, Android 15 (`API 35`) 60Hz güç kısıtlamasını devre dışı bırakır ve uygulama ikonlarını arka planda GPU belleğine hazırlar (`Bitmap.prepareToDraw`).
-- **One UI'dan Bağımsız Dahili "HNM Ayarlar" Uygulaması:** Pil sağlığı ve sıcaklığı (`°C`), ekran parlaklığı ve kilit süresi, ses ve Haptic profilleri, renkli depolama çubuğu, canlı RAM kullanımı ve uygulama yöneticisi tamamen kendi buzlu cam tasarımımızla çalışır; telefonun *Ayarlar* ikonuna basıldığında bile One UI yerine doğrudan **HNM Ayarlar** açılır.
-- **Sağ Üstten İnen Buzlu Cam Denetim Merkezi (`Control Center`):** Dikey iOS Parlaklık ve Ses barları, El Feneri, Yön Kilidi, Medya Oynatıcı kontrolleri ve hızlı ağ kartı Play Protect engeline takılmadan çalışır.
-- **Minimalist Özelleştirme Stüdyosu (`7×7` Izgara, Klasör & Dock):** Ana ekran uygulama ızgarasını `4×4`'ten **`7×7`**'ye, klasör içi dizilimi `3×3`'ten **`7×7`**'ye kadar ayarlayabilir; alt **Dock barını büyütüp küçültebilir (`%75–%125`)** ve Dock ikon kapasitesini (`3–7` ikon) dilediğiniz gibi değiştirebilirsiniz.
-- **3 Düzlemli Uzamsal Yatay Akış (`HorizontalPager`):** Today View (`Sayfa 0`), Dinamik Sayfalı Ana Ekran + Buzlu Cam Dock ve Otomatik Kategorili Uygulama Arşivi (`App Library`).
-- **Telefon Odaklı, Tablet Rezerve Mimari:** Telefon dikey ergonomisi aktiftir; `FormFactorPolicy` içinde `6×5` tablet ızgara düzeni rezerve olarak hazır tutulur.
+- **Gerçek 120 FPS & Minimalist iOS Animasyon Fiziği:** `HighRefreshRateHelper` ile en yüksek ekran yenileme hızını (`90Hz` / `120Hz` / `144Hz`) kilitler; paneller açıldığında arka plan derinlik çekilmesi (`%94.5`), yumuşak sayfa geçişleri ve doğal faz farkıyla çalışan ikon düzenleme (jiggle) animasyonu sunar.
+- **iOS Durum Çubuğu + Sağ Üst Denetim Merkezi & Sol Üst HNM Bildirim Merkezi:** Ana ekranda One UI üst çubuğunu gizleyerek kendi sade iOS durum çubuğunu sunar:
+  - **Sağ Üstten Aşağı Çekme → Denetim Merkezi:** Dikey Parlaklık ve Ses çubukları, El Feneri, Yön Kilidi, Medya kontrolleri ve Bağlantı kartı.
+  - **Sol Üstten Aşağı Çekme → HNM Bildirim & Özet Merkezi:** One UI bildirim paneli yerine büyük iOS saat/tarih başlığı, canlı pil/ses modu kapsülleri, anlık hatırlatıcılar ve Fener/Kamera kısayolları açılır.
+- **120 FPS Uygulama Sürükle-Bırak (Izgara + Klasör + Dock'a Ekle / Dock'tan Çıkar):** Herhangi bir ikona basılı tutup parmağınızı kaydırarak uygulamaları sayfalar arasında taşıyabilir, klasöre bırakabilir, **alt Dock'a sürükleyip sabitleyebilir** (doluysa otomatik takas eder) veya **Dock'tan sürükleyip ana ekrana çıkarabilirsiniz**.
+- **One UI'dan Bağımsız Dahili "HNM Ayarlar" Uygulaması:** Pil sağlığı ve sıcaklığı (`°C`), ekran parlaklığı, ses profilleri, depolama, RAM ve `7×7`'ye kadar ızgara/klasör ile Dock boyutu (`%75–%125`) özelleştirmelerini tek çatı altında sunar.
 
 ### 📦 İndirme ve Kurulum
 
 Play Protect uyumlu, özel sürüm anahtarıyla imzalanmış APK dosyasını doğrudan indirebilirsiniz:
-- **[HNMUI v0.2.0-alpha APK İndir](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.2.0-alpha.apk)**
+- **[HNMUI v0.3.0-alpha APK İndir](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.0-alpha.apk)**
 - Kurulumdan sonra ana ekranın üstündeki **"Ayarla"** çubuğuna dokunup varsayılan ana ekran uygulaması olarak **HNMUI**'yi seçmeniz yeterlidir.
 
 ### 🛠️ Kaynak Koddan Derleme

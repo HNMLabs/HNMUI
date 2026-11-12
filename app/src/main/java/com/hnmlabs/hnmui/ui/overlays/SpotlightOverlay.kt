@@ -3,6 +3,8 @@ package com.hnmlabs.hnmui.ui.overlays
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -20,7 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +55,7 @@ import com.hnmlabs.hnmui.ui.components.AppIconTile
 import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
 import com.hnmlabs.hnmui.ui.components.MiniAppIconPreview
+import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
 
@@ -88,14 +90,16 @@ fun SpotlightOverlay(
         visible = visible,
         enter = fadeIn(animationSpec = HnmMotion.sheetSpring()) +
             slideInVertically(
-                initialOffsetY = { -it / 6 },
+                initialOffsetY = { -it / 7 },
                 animationSpec = HnmMotion.sheetSpring()
-            ),
+            ) +
+            scaleIn(initialScale = 0.97f, animationSpec = HnmMotion.sheetSpring()),
         exit = fadeOut(animationSpec = HnmMotion.sheetSpring()) +
             slideOutVertically(
-                targetOffsetY = { -it / 6 },
+                targetOffsetY = { -it / 7 },
                 animationSpec = HnmMotion.sheetSpring()
-            )
+            ) +
+            scaleOut(targetScale = 0.97f, animationSpec = HnmMotion.sheetSpring())
     ) {
         Box(
             modifier = Modifier
@@ -110,7 +114,7 @@ fun SpotlightOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
+                    .hnmSafeTopPadding()
                     .imePadding()
                     .padding(horizontal = 18.dp, vertical = 14.dp)
             ) {

@@ -154,6 +154,79 @@ class LauncherCoreTest {
         assertTrue(seeded.pages.first().items.any { it is HomeGridItem.FolderTile })
     }
 
+    @Test
+    fun `drag and drop supports grid reorder, dock extraction, dock insertion and full dock swap`() {
+        val dialer = AppComponentKey("com.dialer", "Main")
+        val chat = AppComponentKey("com.chat", "Main")
+        val browser = AppComponentKey("com.browser", "Main")
+        val camera = AppComponentKey("com.camera", "Main")
+        val spotify = AppComponentKey("com.spotify", "Main")
+        val notes = AppComponentKey("com.notes", "Main")
+
+        val initial = com.hnmlabs.hnmui.model.PersistedHomeState(
+            dock = listOf(dialer, chat, browser),
+            pages = listOf(
+                com.hnmlabs.hnmui.model.HomePageModel(
+                    id = "page_1",
+                    items = listOf(
+                        HomeGridItem.AppTile(camera),
+                        HomeGridItem.AppTile(spotify),
+                        HomeGridItem.AppTile(notes)
+                    )
+                )
+            )
+        )
+
+        // 1) Ana ekrandan Dock'a sürükleyip ekleme (3 -> 4 öğe)
+        val afterAddToDock = HomeLayoutRepository.applyDragDropToState(
+            state = initial,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(0, 1),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.DockCell(1),
+            maxPerPage = 24,
+            maxDockItems = 4
+        )
+        assertEquals(listOf(dialer, spotify, chat, browser), afterAddToDock.dock)
+        assertEquals(2, afterAddToDock.pages.first().items.size)
+
+        // 2) Dolu Dock'a (4/4) başka bir uygulama sürüklenirse hedef yuvadaki uygulama ana ekrana takas edilir
+        val afterFullSwap = HomeLayoutRepository.applyDragDropToState(
+            state = afterAddToDock,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(0, 0),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.DockCell(2),
+            maxPerPage = 24,
+            maxDockItems = 4
+        )
+        assertEquals(listOf(dialer, spotify, camera, browser), afterFullSwap.dock)
+        assertTrue(
+            afterFullSwap.pages.first().items.any {
+                it is HomeGridItem.AppTile && it.key == chat
+            }
+        )
+
+        // 3) Dock'tan uygulamayı sürükleyip ana ekrana çıkarma
+        val afterExtractFromDock = HomeLayoutRepository.applyDragDropToState(
+            state = afterFullSwap,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.DockSlot(0),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.HomeCell(0, 0),
+            maxPerPage = 24,
+            maxDockItems = 4
+        )
+        assertEquals(listOf(spotify, camera, browser), afterExtractFromDock.dock)
+        val firstHomeItem = afterExtractFromDock.pages.first().items.first() as HomeGridItem.AppTile
+        assertEquals(dialer, firstHomeItem.key)
+
+        // 4) Ana ekran ızgarası içinde sıralama değiştirme
+        val afterHomeReorder = HomeLayoutRepository.applyDragDropToState(
+            state = afterExtractFromDock,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(0, 0),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.HomeCell(0, 2),
+            maxPerPage = 24,
+            maxDockItems = 4
+        )
+        val thirdItem = afterHomeReorder.pages.first().items[2] as HomeGridItem.AppTile
+        assertEquals(dialer, thirdItem.key)
+    }
+
     private fun sampleApp(pkg: String, label: String, category: AppCategory): AppItem {
         return AppItem(
             key = AppComponentKey(packageName = pkg, className = "$pkg.MainActivity"),

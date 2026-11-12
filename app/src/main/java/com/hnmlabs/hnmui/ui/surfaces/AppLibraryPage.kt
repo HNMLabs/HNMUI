@@ -49,6 +49,7 @@ import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
 import com.hnmlabs.hnmui.ui.components.MiniAppIconPreview
 import com.hnmlabs.hnmui.ui.components.SquircleShape
+import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
 import java.util.Locale
 
@@ -74,7 +75,7 @@ fun AppLibraryPage(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .hnmSafeTopPadding()
             .padding(horizontal = 18.dp)
     ) {
         Spacer(modifier = Modifier.height(14.dp))

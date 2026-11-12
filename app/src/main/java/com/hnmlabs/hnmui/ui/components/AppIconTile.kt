@@ -74,6 +74,7 @@ fun AppIconTile(
     iconSize: Dp,
     showLabel: Boolean = true,
     isEditMode: Boolean = false,
+    enableInternalClickHandling: Boolean = true,
     cachedIconProvider: (AppComponentKey) -> ImageBitmap?,
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?,
     onClick: () -> Unit,
@@ -95,18 +96,22 @@ fun AppIconTile(
     }
 
     val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.90f else 1f,
+        targetValue = if (isPressed) 0.91f else 1f,
         animationSpec = HnmMotion.iconPressSpring(),
         label = "iconPressScale"
     )
 
-    val jiggleRotation = if (isEditMode) {
-        val infinite = rememberInfiniteTransition(label = "jiggle")
+    val hashSeed = remember(app.key.stableId) { (app.key.stableId.hashCode() and 0x7FFFFFFF) }
+    val jiggleDurationMs = remember(hashSeed) { 128 + (hashSeed % 26) }
+    val jiggleSign = remember(hashSeed) { if (hashSeed % 2 == 0) 1f else -1f }
+
+    val rawJiggle = if (isEditMode) {
+        val infinite = rememberInfiniteTransition(label = "jiggle_${app.key.stableId}")
         val angle by infinite.animateFloat(
-            initialValue = -1.8f,
-            targetValue = 1.8f,
+            initialValue = -1.55f * jiggleSign,
+            targetValue = 1.55f * jiggleSign,
             animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 135, easing = FastOutSlowInEasing),
+                animation = tween(durationMillis = jiggleDurationMs, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
             ),
             label = "jiggleAngle"
@@ -114,6 +119,25 @@ fun AppIconTile(
         angle
     } else {
         0f
+    }
+    val jiggleRotation by animateFloatAsState(
+        targetValue = rawJiggle,
+        animationSpec = HnmMotion.iconPressSpring(),
+        label = "jiggleSmoothSettle"
+    )
+
+    val clickModifier = if (enableInternalClickHandling) {
+        Modifier.combinedClickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick,
+            onLongClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                onLongClick()
+            }
+        )
+    } else {
+        Modifier
     }
 
     Column(
@@ -123,15 +147,7 @@ fun AppIconTile(
                 scaleY = pressScale
                 rotationZ = jiggleRotation
             }
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongClick()
-                }
-            ),
+            .then(clickModifier),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -247,6 +263,9 @@ fun FolderIconTile(
     iconSize: Dp,
     previewColumns: Int = 2,
     showLabel: Boolean = true,
+    isEditMode: Boolean = false,
+    isDropTargetHighlighted: Boolean = false,
+    enableInternalClickHandling: Boolean = true,
     cachedIconProvider: (AppComponentKey) -> ImageBitmap?,
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?,
     onClick: () -> Unit,
@@ -257,29 +276,61 @@ fun FolderIconTile(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
+    val targetScale = when {
+        isDropTargetHighlighted -> 1.11f
+        isPressed -> 0.91f
+        else -> 1f
+    }
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.91f else 1f,
+        targetValue = targetScale,
         animationSpec = HnmMotion.iconPressSpring(),
         label = "folderPressScale"
     )
 
+    val folderSeed = remember(folder.id) { (folder.id.hashCode() and 0x7FFFFFFF) }
+    val rawFolderJiggle = if (isEditMode) {
+        val infinite = rememberInfiniteTransition(label = "folderJiggle_${folder.id}")
+        val angle by infinite.animateFloat(
+            initialValue = -1.4f,
+            targetValue = 1.4f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = 134 + (folderSeed % 20),
+                    easing = FastOutSlowInEasing
+                ),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "folderJiggleAngle"
+        )
+        angle
+    } else {
+        0f
+    }
+
     val gridN = previewColumns.coerceIn(2, 3)
+
+    val clickMod = if (enableInternalClickHandling) {
+        Modifier.combinedClickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick,
+            onLongClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                onLongClick()
+            }
+        )
+    } else {
+        Modifier
+    }
 
     Column(
         modifier = modifier
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
+                rotationZ = rawFolderJiggle
             }
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongClick()
-                }
-            ),
+            .then(clickMod),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -289,7 +340,7 @@ fun FolderIconTile(
             GlassSurface(
                 modifier = Modifier.size(iconSize),
                 shape = SquircleShape.Icon,
-                tone = GlassTone.DOCK
+                tone = if (isDropTargetHighlighted) GlassTone.PILL else GlassTone.DOCK
             ) {
                 val maxPreviewCount = gridN * gridN
                 val previewApps = folder.apps.take(maxPreviewCount)

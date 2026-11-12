@@ -22,8 +22,8 @@ android {
         applicationId = "com.hnmlabs.hnmui"
         minSdk = 28
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.2.0-alpha"
+        versionCode = 5
+        versionName = "0.3.0-alpha"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

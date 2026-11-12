@@ -4,8 +4,12 @@ import android.app.Activity
 import android.media.AudioManager
 import android.view.KeyEvent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -24,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,6 +74,7 @@ import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
 import com.hnmlabs.hnmui.ui.components.SquircleShape
+import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
 
@@ -83,6 +87,7 @@ import com.hnmlabs.hnmui.ui.theme.HnmPalette
 fun ControlCenterOverlay(
     visible: Boolean,
     allApps: List<AppItem>,
+    onOpenNotificationCenter: () -> Unit,
     onOpenHnmSettings: () -> Unit,
     onLaunchApp: (AppItem) -> Unit,
     onDismiss: () -> Unit
@@ -112,19 +117,35 @@ fun ControlCenterOverlay(
         visible = visible,
         enter = fadeIn(animationSpec = HnmMotion.sheetSpring()) +
             slideInVertically(
-                initialOffsetY = { -it / 3 },
+                initialOffsetY = { -it / 4 },
                 animationSpec = HnmMotion.sheetSpring()
-            ),
+            ) +
+            scaleIn(initialScale = 0.96f, animationSpec = HnmMotion.sheetSpring()),
         exit = fadeOut(animationSpec = HnmMotion.sheetSpring()) +
             slideOutVertically(
-                targetOffsetY = { -it / 3 },
+                targetOffsetY = { -it / 4 },
                 animationSpec = HnmMotion.sheetSpring()
-            )
+            ) +
+            scaleOut(targetScale = 0.96f, animationSpec = HnmMotion.sheetSpring())
     ) {
+        var upwardSwipePx = 0f
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xAD080D18))
+                .background(Color(0xB8080D18))
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onDragStart = { upwardSwipePx = 0f },
+                        onVerticalDrag = { _, dragAmount ->
+                            upwardSwipePx += dragAmount
+                            if (upwardSwipePx < -85f) {
+                                upwardSwipePx = 0f
+                                onDismiss()
+                            }
+                        }
+                    )
+                }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -134,8 +155,8 @@ fun ControlCenterOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 18.dp)
+                    .hnmSafeTopPadding()
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -148,11 +169,21 @@ fun ControlCenterOverlay(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Denetim Merkezi",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column {
+                        Text(
+                            text = "Denetim Merkezi",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "← Bildirim Merkezi",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = HnmPalette.AccentCyan,
+                            modifier = Modifier
+                                .padding(top = 2.dp)
+                                .clickable { onOpenNotificationCenter() }
+                        )
+                    }
                     GlassSurface(
                         shape = RoundedCornerShape(16.dp),
                         tone = GlassTone.PILL,

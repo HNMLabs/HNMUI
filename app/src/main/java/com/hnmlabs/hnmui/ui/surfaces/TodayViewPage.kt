@@ -61,6 +61,7 @@ import com.hnmlabs.hnmui.model.QuickNoteItem
 import com.hnmlabs.hnmui.ui.components.AppIconTile
 import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
+import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
 import com.hnmlabs.hnmui.widget.LauncherWidgetHostManager
 import java.time.LocalDateTime
@@ -119,7 +120,7 @@ fun TodayViewPage(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding(),
+            .hnmSafeTopPadding(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 112.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {

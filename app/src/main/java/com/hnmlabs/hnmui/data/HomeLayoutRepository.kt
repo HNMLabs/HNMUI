@@ -389,6 +389,23 @@ class HomeLayoutRepository(
         }
     }
 
+    suspend fun applyDragDrop(
+        source: LayoutDragSource,
+        destination: LayoutDropDestination,
+        maxPerPage: Int,
+        maxDockItems: Int
+    ) {
+        mutateState { state ->
+            applyDragDropToState(
+                state = state,
+                source = source,
+                destination = destination,
+                maxPerPage = maxPerPage,
+                maxDockItems = maxDockItems
+            )
+        }
+    }
+
     private suspend fun mutateState(transform: (PersistedHomeState) -> PersistedHomeState) {
         context.homeLayoutDataStore.edit { prefs ->
             val current = prefs[stateKey]
@@ -400,6 +417,223 @@ class HomeLayoutRepository(
     }
 
     companion object {
+        sealed interface LayoutDragSource {
+            data class HomeSlot(val pageIndex: Int, val slotIndex: Int) : LayoutDragSource
+            data class DockSlot(val dockIndex: Int) : LayoutDragSource
+        }
+
+        sealed interface LayoutDropDestination {
+            data class HomeCell(val pageIndex: Int, val slotIndex: Int) : LayoutDropDestination
+            data class MergeIntoFolder(val folderId: String) : LayoutDropDestination
+            data class DockCell(val insertIndex: Int) : LayoutDropDestination
+        }
+
+        /**
+         * Ana ekran ızgarası, klasörler ve alt Dock arasındaki tüm sürükle-bırak
+         * geçişlerini (Dock'a ekleme, Dock doluysa takas etme, Dock'tan çıkarma,
+         * Dock içi sıralama ve sayfa içi/arası taşıma) atomik olarak uygular.
+         */
+        fun applyDragDropToState(
+            state: PersistedHomeState,
+            source: LayoutDragSource,
+            destination: LayoutDropDestination,
+            maxPerPage: Int,
+            maxDockItems: Int
+        ): PersistedHomeState {
+            val safeMaxPerPage = maxPerPage.coerceAtLeast(8)
+            val safeMaxDock = maxDockItems.coerceIn(3, 7)
+
+            val initialPages = spillOverflowPages(
+                pages = state.pages.ifEmpty {
+                    listOf(HomePageModel(id = "page_1", items = emptyList()))
+                },
+                maxPerPage = safeMaxPerPage
+            ).toMutableList()
+            val dock = state.dock.toMutableList()
+
+            when (source) {
+                is LayoutDragSource.HomeSlot -> {
+                    val fromPage = initialPages.getOrNull(source.pageIndex) ?: return state
+                    val movingItem = fromPage.items.getOrNull(source.slotIndex) ?: return state
+
+                    when (destination) {
+                        is LayoutDropDestination.HomeCell -> {
+                            if (source.pageIndex == destination.pageIndex) {
+                                val list = fromPage.items.toMutableList()
+                                list.removeAt(source.slotIndex)
+                                val insertIdx = destination.slotIndex.coerceIn(0, list.size)
+                                list.add(insertIdx, movingItem)
+                                initialPages[source.pageIndex] = fromPage.copy(items = list)
+                            } else {
+                                val srcList = fromPage.items.toMutableList()
+                                srcList.removeAt(source.slotIndex)
+                                initialPages[source.pageIndex] = fromPage.copy(items = srcList)
+
+                                while (initialPages.size <= destination.pageIndex) {
+                                    initialPages += HomePageModel(
+                                        id = "page_${UUID.randomUUID()}",
+                                        items = emptyList()
+                                    )
+                                }
+                                val dstPage = initialPages[destination.pageIndex]
+                                val dstList = dstPage.items.toMutableList()
+                                dstList.add(destination.slotIndex.coerceIn(0, dstList.size), movingItem)
+                                initialPages[destination.pageIndex] = dstPage.copy(items = dstList)
+                            }
+                            return state.copy(
+                                pages = spillOverflowPages(pruneEmptyExtraPages(initialPages), safeMaxPerPage)
+                            )
+                        }
+
+                        is LayoutDropDestination.MergeIntoFolder -> {
+                            val appTile = movingItem as? HomeGridItem.AppTile ?: return state
+                            val folderExists = initialPages.any { p ->
+                                p.items.any { it is HomeGridItem.FolderTile && it.id == destination.folderId }
+                            }
+                            if (!folderExists) return state
+
+                            val srcList = fromPage.items.toMutableList()
+                            srcList.removeAt(source.slotIndex)
+                            initialPages[source.pageIndex] = fromPage.copy(items = srcList)
+
+                            val mergedPages = initialPages.map { page ->
+                                page.copy(
+                                    items = page.items.map { item ->
+                                        if (item is HomeGridItem.FolderTile && item.id == destination.folderId) {
+                                            if (item.apps.any { it.stableId == appTile.key.stableId }) {
+                                                item
+                                            } else {
+                                                item.copy(apps = item.apps + appTile.key)
+                                            }
+                                        } else {
+                                            item
+                                        }
+                                    }
+                                )
+                            }
+                            return state.copy(pages = pruneEmptyExtraPages(mergedPages))
+                        }
+
+                        is LayoutDropDestination.DockCell -> {
+                            val appTile = movingItem as? HomeGridItem.AppTile ?: return state
+                            if (dock.any { it.stableId == appTile.key.stableId }) return state
+
+                            val srcList = fromPage.items.toMutableList()
+                            srcList.removeAt(source.slotIndex)
+
+                            if (dock.size < safeMaxDock) {
+                                dock.add(destination.insertIndex.coerceIn(0, dock.size), appTile.key)
+                            } else if (dock.isNotEmpty()) {
+                                val swapIdx = destination.insertIndex.coerceIn(0, dock.lastIndex)
+                                val displacedKey = dock[swapIdx]
+                                dock[swapIdx] = appTile.key
+                                srcList.add(source.slotIndex.coerceIn(0, srcList.size), HomeGridItem.AppTile(displacedKey))
+                            }
+                            initialPages[source.pageIndex] = fromPage.copy(items = srcList)
+                            return state.copy(
+                                dock = dock,
+                                pages = spillOverflowPages(pruneEmptyExtraPages(initialPages), safeMaxPerPage)
+                            )
+                        }
+                    }
+                }
+
+                is LayoutDragSource.DockSlot -> {
+                    val movingAppKey = dock.getOrNull(source.dockIndex) ?: return state
+
+                    when (destination) {
+                        is LayoutDropDestination.DockCell -> {
+                            dock.removeAt(source.dockIndex)
+                            dock.add(destination.insertIndex.coerceIn(0, dock.size), movingAppKey)
+                            return state.copy(dock = dock)
+                        }
+
+                        is LayoutDropDestination.HomeCell -> {
+                            dock.removeAt(source.dockIndex)
+                            while (initialPages.size <= destination.pageIndex) {
+                                initialPages += HomePageModel(
+                                    id = "page_${UUID.randomUUID()}",
+                                    items = emptyList()
+                                )
+                            }
+                            val dstPage = initialPages[destination.pageIndex]
+                            val dstList = dstPage.items
+                                .filterNot { it is HomeGridItem.AppTile && it.key.stableId == movingAppKey.stableId }
+                                .toMutableList()
+                            dstList.add(
+                                destination.slotIndex.coerceIn(0, dstList.size),
+                                HomeGridItem.AppTile(movingAppKey)
+                            )
+                            initialPages[destination.pageIndex] = dstPage.copy(items = dstList)
+                            return state.copy(
+                                dock = dock,
+                                pages = spillOverflowPages(pruneEmptyExtraPages(initialPages), safeMaxPerPage)
+                            )
+                        }
+
+                        is LayoutDropDestination.MergeIntoFolder -> {
+                            val folderExists = initialPages.any { p ->
+                                p.items.any { it is HomeGridItem.FolderTile && it.id == destination.folderId }
+                            }
+                            if (!folderExists) return state
+
+                            dock.removeAt(source.dockIndex)
+                            val mergedPages = initialPages.map { page ->
+                                page.copy(
+                                    items = page.items.map { item ->
+                                        if (item is HomeGridItem.FolderTile && item.id == destination.folderId) {
+                                            if (item.apps.any { it.stableId == movingAppKey.stableId }) {
+                                                item
+                                            } else {
+                                                item.copy(apps = item.apps + movingAppKey)
+                                            }
+                                        } else {
+                                            item
+                                        }
+                                    }
+                                )
+                            }
+                            return state.copy(
+                                dock = dock,
+                                pages = pruneEmptyExtraPages(mergedPages)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        private fun pruneEmptyExtraPages(pages: List<HomePageModel>): List<HomePageModel> {
+            val nonEmpty = pages.filter { it.items.isNotEmpty() }
+            return nonEmpty.ifEmpty {
+                listOf(pages.firstOrNull()?.copy(items = emptyList()) ?: HomePageModel(id = "page_1", items = emptyList()))
+            }
+        }
+
+        private fun spillOverflowPages(
+            pages: List<HomePageModel>,
+            maxPerPage: Int
+        ): List<HomePageModel> {
+            val result = ArrayList<HomePageModel>()
+            var carryOver = emptyList<HomeGridItem>()
+            for (page in pages) {
+                val combined = carryOver + page.items
+                if (combined.size <= maxPerPage) {
+                    result += page.copy(items = combined)
+                    carryOver = emptyList()
+                } else {
+                    result += page.copy(items = combined.take(maxPerPage))
+                    carryOver = combined.drop(maxPerPage)
+                }
+            }
+            while (carryOver.isNotEmpty()) {
+                val chunk = carryOver.take(maxPerPage)
+                carryOver = carryOver.drop(maxPerPage)
+                result += HomePageModel(id = "page_${result.size + 1}", items = chunk)
+            }
+            return result.ifEmpty { listOf(HomePageModel(id = "page_1", items = emptyList())) }
+        }
+
         fun rebalancePages(
             pages: List<HomePageModel>,
             maxPerPage: Int

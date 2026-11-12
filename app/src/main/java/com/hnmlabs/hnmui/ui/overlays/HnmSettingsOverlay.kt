@@ -94,6 +94,7 @@ import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
 import com.hnmlabs.hnmui.ui.components.MiniAppIconPreview
 import com.hnmlabs.hnmui.ui.components.SquircleShape
+import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
 import java.util.Locale
@@ -151,12 +152,12 @@ fun HnmSettingsOverlay(
         visible = visible,
         enter = fadeIn(animationSpec = HnmMotion.sheetSpring()) +
             slideInVertically(
-                initialOffsetY = { it / 8 },
+                initialOffsetY = { it / 10 },
                 animationSpec = HnmMotion.sheetSpring()
             ),
         exit = fadeOut(animationSpec = HnmMotion.sheetSpring()) +
             slideOutVertically(
-                targetOffsetY = { it / 8 },
+                targetOffsetY = { it / 10 },
                 animationSpec = HnmMotion.sheetSpring()
             )
     ) {
@@ -168,18 +169,22 @@ fun HnmSettingsOverlay(
                         colors = listOf(Color(0xEB0B1220), Color(0xF5070C16))
                     )
                 )
-                .statusBarsPadding()
+                .hnmSafeTopPadding()
                 .navigationBarsPadding()
         ) {
             AnimatedContent(
                 targetState = currentRoute,
                 transitionSpec = {
                     if (targetState != SettingsRoute.ROOT) {
-                        (slideInHorizontally { it / 3 } + fadeIn()) togetherWith
-                            (slideOutHorizontally { -it / 4 } + fadeOut())
+                        (slideInHorizontally(animationSpec = HnmMotion.sheetSpring()) { it / 3 } +
+                            fadeIn(animationSpec = HnmMotion.sheetSpring())) togetherWith
+                            (slideOutHorizontally(animationSpec = HnmMotion.sheetSpring()) { -it / 5 } +
+                                fadeOut(animationSpec = HnmMotion.sheetSpring()))
                     } else {
-                        (slideInHorizontally { -it / 4 } + fadeIn()) togetherWith
-                            (slideOutHorizontally { it / 3 } + fadeOut())
+                        (slideInHorizontally(animationSpec = HnmMotion.sheetSpring()) { -it / 5 } +
+                            fadeIn(animationSpec = HnmMotion.sheetSpring())) togetherWith
+                            (slideOutHorizontally(animationSpec = HnmMotion.sheetSpring()) { it / 3 } +
+                                fadeOut(animationSpec = HnmMotion.sheetSpring()))
                     }
                 },
                 label = "settingsRouteTransition"
@@ -826,6 +831,17 @@ private fun CustomizationSubPage(
                             }
                         )
                     }
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title = "iOS Durum Çubuğu (One UI Üst Çubuğu Gizle)",
+                        subtitle = "Sağ üstten Denetim Merkezi, sol üstten HNM Bildirim Merkezi iner",
+                        checked = customization.useIosStatusBar,
+                        onCheckedChange = { enabled ->
+                            onUpdateCustomization { it.copy(useIosStatusBar = enabled) }
+                        }
+                    )
 
                     SettingsDivider()
 
