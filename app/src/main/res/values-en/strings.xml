@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HNMUI</string>
+    <string name="notification_listener_label">HNMUI Notification Badges</string>
+    <string name="search_placeholder">Search apps, shortcuts, or web</string>
+    <string name="search_pill_label">Search</string>
+    <string name="today_title">Today</string>
+    <string name="app_library_title">App Library</string>
+    <string name="set_default_launcher">Set HNMUI as Default Home</string>
+    <string name="enable_badges">Enable Notification Badges</string>
+</resources>

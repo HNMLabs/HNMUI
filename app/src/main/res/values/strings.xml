@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HNMUI</string>
+    <string name="notification_listener_label">HNMUI Bildirim Rozetleri</string>
+    <string name="search_placeholder">Uygulama, kısayol veya web\'de ara</string>
+    <string name="search_pill_label">Ara</string>
+    <string name="today_title">Bugün</string>
+    <string name="app_library_title">Uygulama Arşivi</string>
+    <string name="set_default_launcher">HNMUI\'yi Varsayılan Ana Ekran Yap</string>
+    <string name="enable_badges">Bildirim Rozetlerini Etkinleştir</string>
+</resources>
