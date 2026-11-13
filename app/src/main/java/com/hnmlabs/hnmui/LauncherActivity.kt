@@ -19,12 +19,16 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.hnmlabs.hnmui.core.formfactor.FormFactorPolicy
 import com.hnmlabs.hnmui.core.system.DefaultLauncherHelper
 import com.hnmlabs.hnmui.core.system.HighRefreshRateHelper
 import com.hnmlabs.hnmui.ui.LauncherScreen
 import com.hnmlabs.hnmui.ui.LauncherViewModel
 import com.hnmlabs.hnmui.ui.theme.HnmLauncherTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * HNMUI Ana Ekran (CATEGORY_HOME) Aktivitesi.
@@ -53,14 +57,11 @@ class LauncherActivity : ComponentActivity() {
     ) { result ->
         val wasExplicitTap = explicitUserRoleTap
         explicitUserRoleTap = false
-        syncDeviceAndPermissionState()
-
-        // Kullanıcı butona dokunduğu halde sistem penceresi bastırıldıysa doğrudan Ana Ekran Ayarları'nı aç
-        if (wasExplicitTap &&
-            result.resultCode != Activity.RESULT_OK &&
-            !DefaultLauncherHelper.isDefaultLauncher(this)
-        ) {
-            DefaultLauncherHelper.openHomeSettings(this)
+        syncDeviceAndPermissionStateAsync { isDefault ->
+            // Kullanıcı butona dokunduğu halde sistem penceresi bastırıldıysa doğrudan Ana Ekran Ayarları'nı aç
+            if (wasExplicitTap && result.resultCode != Activity.RESULT_OK && !isDefault) {
+                DefaultLauncherHelper.openHomeSettings(this@LauncherActivity)
+            }
         }
     }
 
@@ -123,23 +124,21 @@ class LauncherActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
 
-        HighRefreshRateHelper.enableMaxRefreshRate(this)
         applySystemStatusBarPolicy(hideForIosBar = viewModel.uiState.value.customization.useIosStatusBar)
-        syncDeviceAndPermissionState()
-
-        // İlk açılışta HNMUI henüz varsayılan Ana Ekran değilse sistem seçim penceresini otomatik sun
-        if (savedInstanceState == null &&
-            !app.hasAutoPromptedDefaultRole &&
-            !DefaultLauncherHelper.isDefaultLauncher(this)
-        ) {
-            app.hasAutoPromptedDefaultRole = true
-            promptDefaultLauncherRole(isExplicitTap = false)
+        syncDeviceAndPermissionStateAsync { isDefault ->
+            // İlk açılışta HNMUI henüz varsayılan Ana Ekran değilse sistem seçim penceresini otomatik sun
+            if (savedInstanceState == null && !app.hasAutoPromptedDefaultRole && !isDefault) {
+                app.hasAutoPromptedDefaultRole = true
+                promptDefaultLauncherRole(isExplicitTap = false)
+            }
         }
 
         setContent {
-            val state by viewModel.uiState.collectAsStateWithLifecycle()
-            LaunchedEffect(state.customization.useIosStatusBar) {
-                applySystemStatusBarPolicy(hideForIosBar = state.customization.useIosStatusBar)
+            val useIosStatusBar by viewModel.useIosStatusBarFlow.collectAsStateWithLifecycle(
+                initialValue = viewModel.uiState.value.customization.useIosStatusBar
+            )
+            LaunchedEffect(useIosStatusBar) {
+                applySystemStatusBarPolicy(hideForIosBar = useIosStatusBar)
             }
 
             HnmLauncherTheme {
@@ -175,10 +174,9 @@ class LauncherActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        HighRefreshRateHelper.enableMaxRefreshRate(this)
         applySystemStatusBarPolicy(hideForIosBar = viewModel.uiState.value.customization.useIosStatusBar)
-        syncDeviceAndPermissionState()
-        app.installedAppsRepository.refreshAppsAsync()
+        syncDeviceAndPermissionStateAsync()
+        app.installedAppsRepository.refreshAppsAsync(force = false)
     }
 
     private fun applySystemStatusBarPolicy(hideForIosBar: Boolean) {
@@ -228,13 +226,24 @@ class LauncherActivity : ComponentActivity() {
         }
     }
 
-    private fun syncDeviceAndPermissionState() {
+    private fun syncDeviceAndPermissionStateAsync(onSyncedMain: ((Boolean) -> Unit)? = null) {
         val hz = HighRefreshRateHelper.enableMaxRefreshRate(this)
-        viewModel.updateDeviceAndPermissionStatus(
-            smallestScreenWidthDp = resources.configuration.smallestScreenWidthDp,
-            targetRefreshRateHz = hz,
-            isDefaultLauncher = DefaultLauncherHelper.isDefaultLauncher(this),
-            isNotificationAccessEnabled = DefaultLauncherHelper.isNotificationAccessEnabled(this)
-        )
+        val swDp = resources.configuration.smallestScreenWidthDp
+        val appCtx = applicationContext
+        lifecycleScope.launch(Dispatchers.IO) {
+            val isDefault = DefaultLauncherHelper.isDefaultLauncher(appCtx)
+            val isNotifEnabled = DefaultLauncherHelper.isNotificationAccessEnabled(appCtx)
+            viewModel.updateDeviceAndPermissionStatus(
+                smallestScreenWidthDp = swDp,
+                targetRefreshRateHz = hz,
+                isDefaultLauncher = isDefault,
+                isNotificationAccessEnabled = isNotifEnabled
+            )
+            if (onSyncedMain != null) {
+                withContext(Dispatchers.Main.immediate) {
+                    onSyncedMain(isDefault)
+                }
+            }
+        }
     }
 }

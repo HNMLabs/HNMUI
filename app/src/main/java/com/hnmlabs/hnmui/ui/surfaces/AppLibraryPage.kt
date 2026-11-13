@@ -135,12 +135,12 @@ fun AppLibraryPage(
             // Alfabetik filtrelenmiş A-Z görünümü (Türkçe I/İ/ı/i duyarlı)
             val q = filterQuery.trim()
             val filtered = remember(allApps, q) {
+                val prepared = TurkishSearchNormalizer.prepareQuery(q)
                 allApps.filter { app ->
-                    TurkishSearchNormalizer.containsMatch(app.label, q) ||
-                        TurkishSearchNormalizer.containsMatch(app.key.packageName, q)
+                    app.matchesPreparedQuery(prepared)
                 }.sortedWith(
-                    compareByDescending<AppItem> { TurkishSearchNormalizer.startsWithMatch(it.label, q) }
-                        .thenBy { TurkishSearchNormalizer.foldTurkishI(it.label) }
+                    compareByDescending<AppItem> { it.labelStartsWithPreparedQuery(prepared) }
+                        .thenBy { it.foldedLabel }
                 )
             }
 

@@ -1,8 +1,11 @@
 package com.hnmlabs.hnmui.model
 
 import androidx.compose.runtime.Immutable
+import com.hnmlabs.hnmui.core.text.PreparedSearchQuery
+import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * Bir Android aktivitesini çoklu kullanıcı profiliyle birlikte benzersiz tanımlayan anahtar.
@@ -14,7 +17,8 @@ data class AppComponentKey(
     val className: String,
     val userSerial: Long = 0L
 ) {
-    val stableId: String get() = "$packageName/$className#$userSerial"
+    @Transient
+    val stableId: String = "$packageName/$className#$userSerial"
 }
 
 /**
@@ -33,6 +37,8 @@ enum class AppCategory(val titleTr: String) {
 
 /**
  * Çalışma zamanında Launcher içinde gösterilen uygulama modeli.
+ * Arama indeksleri (foldedLabel, asciiLabel, asciiPackage) oluşturma anında tek sefer hesaplanır;
+ * böylece Spotlight, Uygulama Arşivi ve HNM Ayarlar aramalarında tuş başına sıfır tahsis yapılır.
  */
 @Immutable
 data class AppItem(
@@ -41,8 +47,22 @@ data class AppItem(
     val category: AppCategory,
     val firstInstallTimeMillis: Long = 0L,
     val isSystemApp: Boolean = false,
-    val badgeCount: Int = 0
-)
+    val badgeCount: Int = 0,
+    val foldedLabel: String = TurkishSearchNormalizer.foldTurkishI(label),
+    val asciiLabel: String = TurkishSearchNormalizer.foldAscii(label),
+    val foldedPackage: String = TurkishSearchNormalizer.foldTurkishI(key.packageName),
+    val asciiPackage: String = TurkishSearchNormalizer.foldAscii(key.packageName)
+) {
+    fun matchesPreparedQuery(prepared: PreparedSearchQuery): Boolean {
+        if (prepared.isEmpty) return true
+        return TurkishSearchNormalizer.containsPreFolded(foldedLabel, asciiLabel, prepared) ||
+            TurkishSearchNormalizer.containsPreFolded(foldedPackage, asciiPackage, prepared)
+    }
+
+    fun labelStartsWithPreparedQuery(prepared: PreparedSearchQuery): Boolean {
+        return TurkishSearchNormalizer.startsWithPreFolded(foldedLabel, asciiLabel, prepared)
+    }
+}
 
 /**
  * İkona uzun basıldığında (Haptic Touch) veya Spotlight aramasında gösterilen kısayol modeli.
@@ -59,10 +79,12 @@ data class AppShortcutItem(
 /**
  * Ana ekran sayfalarında yer alabilen öğeler: Tekil uygulama veya buzlu cam klasör.
  */
+@Immutable
 @Serializable
 sealed interface HomeGridItem {
     val itemId: String
 
+    @Immutable
     @Serializable
     @SerialName("app")
     data class AppTile(
@@ -71,6 +93,7 @@ sealed interface HomeGridItem {
         override val itemId: String get() = "app:${key.stableId}"
     }
 
+    @Immutable
     @Serializable
     @SerialName("folder")
     data class FolderTile(
@@ -82,12 +105,14 @@ sealed interface HomeGridItem {
     }
 }
 
+@Immutable
 @Serializable
 data class HomePageModel(
     val id: String,
     val items: List<HomeGridItem>
 )
 
+@Immutable
 @Serializable
 data class QuickNoteItem(
     val id: String,
@@ -120,6 +145,7 @@ data class LauncherCustomizationSettings(
 /**
  * DataStore üzerinde JSON olarak kalıcı saklanan kullanıcı ana ekran düzeni ve ayarları.
  */
+@Immutable
 @Serializable
 data class PersistedHomeState(
     val dock: List<AppComponentKey> = emptyList(),
@@ -146,28 +172,33 @@ data class LiveNotificationCard(
 /**
  * Çözümlenmiş (AppItem nesneleriyle eşleştirilmiş) UI katmanı ana ekran öğeleri.
  */
+@Immutable
 sealed interface ResolvedHomeItem {
     val itemId: String
 
+    @Immutable
     data class App(val app: AppItem) : ResolvedHomeItem {
-        override val itemId: String get() = "app:${app.key.stableId}"
+        override val itemId: String = "app:${app.key.stableId}"
     }
 
+    @Immutable
     data class Folder(
         val id: String,
         val title: String,
         val apps: List<AppItem>,
         val totalBadges: Int
     ) : ResolvedHomeItem {
-        override val itemId: String get() = "folder:$id"
+        override val itemId: String = "folder:$id"
     }
 }
 
+@Immutable
 data class ResolvedHomePage(
     val id: String,
     val items: List<ResolvedHomeItem>
 )
 
+@Immutable
 data class AppLibraryGroup(
     val category: AppCategory,
     val apps: List<AppItem>

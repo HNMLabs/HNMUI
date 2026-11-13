@@ -54,7 +54,6 @@ import androidx.core.content.ContextCompat
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalTime
@@ -132,10 +131,7 @@ fun HnmIosStatusBar(
     }
 
     LaunchedEffect(context) {
-        while (true) {
-            refreshStatusSuspend()
-            delay(15_000L)
-        }
+        refreshStatusSuspend()
     }
 
     DisposableEffect(context) {
@@ -163,9 +159,38 @@ fun HnmIosStatusBar(
             true
         }.getOrDefault(false)
 
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                scope.launch { refreshStatusSuspend() }
+            }
+
+            override fun onLost(network: android.net.Network) {
+                scope.launch { refreshStatusSuspend() }
+            }
+
+            override fun onCapabilitiesChanged(
+                network: android.net.Network,
+                networkCapabilities: android.net.NetworkCapabilities
+            ) {
+                scope.launch { refreshStatusSuspend() }
+            }
+        }
+        val networkRegistered = if (connectivityManager != null) {
+            runCatching {
+                connectivityManager.registerDefaultNetworkCallback(networkCallback)
+                true
+            }.getOrDefault(false)
+        } else {
+            false
+        }
+
         onDispose {
             if (registered) {
                 runCatching { context.unregisterReceiver(receiver) }
+            }
+            if (networkRegistered && connectivityManager != null) {
+                runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
             }
         }
     }

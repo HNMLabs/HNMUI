@@ -10,6 +10,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.os.Process
+import android.os.SystemClock
 import android.os.UserHandle
 import android.os.UserManager
 import android.util.LruCache
@@ -19,21 +20,28 @@ import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.AppShortcutItem
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import java.text.Collator
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Yüklü tüm başlatılabilir uygulamaları, ikon önbelleğini ve uygulama kısayollarını yönetir.
- * LauncherApps.Callback sayesinde paket kurulum/silme/güncelleme olaylarını anlık yakalar.
+ * LauncherApps.Callback sayesinde paket kurulum/silme/güncelleme olaylarını anlık yakalar;
+ * soğuk açılışta uygulama listesini anında yayınlayıp ikon dokularını arka planda GPU'ya ısıtır.
  */
 class InstalledAppsRepository(
     private val context: Context
@@ -41,12 +49,18 @@ class InstalledAppsRepository(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val refreshMutex = Mutex()
     private val refreshRequested = AtomicBoolean(false)
+    private val lastRefreshCompletedAtMs = AtomicLong(0L)
+
+    @Volatile
+    private var prewarmJob: Job? = null
 
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
     private val userManager = context.getSystemService(UserManager::class.java)
     private val packageManager = context.packageManager
 
-    private val iconCache = object : LruCache<String, ImageBitmap>(200) {}
+    // 512 kapasiteli önbellek: 250-400 uygulamalı cihazlarda App Library kaydırılırken tahliye (eviction) kasılmasını önler
+    private val iconCache = object : LruCache<String, ImageBitmap>(512) {}
+    private val inFlightIconLoads = ConcurrentHashMap<String, Deferred<ImageBitmap?>>()
 
     private val _apps = MutableStateFlow<List<AppItem>>(emptyList())
     val apps: StateFlow<List<AppItem>> = _apps.asStateFlow()
@@ -54,16 +68,16 @@ class InstalledAppsRepository(
     private val appsCallback = object : LauncherApps.Callback() {
         override fun onPackageRemoved(packageName: String?, user: UserHandle?) {
             evictIconsForPackage(packageName)
-            refreshAppsAsync()
+            refreshAppsAsync(force = true)
         }
 
         override fun onPackageAdded(packageName: String?, user: UserHandle?) {
-            refreshAppsAsync()
+            refreshAppsAsync(force = true)
         }
 
         override fun onPackageChanged(packageName: String?, user: UserHandle?) {
             evictIconsForPackage(packageName)
-            refreshAppsAsync()
+            refreshAppsAsync(force = true)
         }
 
         override fun onPackagesAvailable(
@@ -74,7 +88,7 @@ class InstalledAppsRepository(
             if (replacing) {
                 packageNames?.forEach { evictIconsForPackage(it) }
             }
-            refreshAppsAsync()
+            refreshAppsAsync(force = true)
         }
 
         override fun onPackagesUnavailable(
@@ -83,29 +97,35 @@ class InstalledAppsRepository(
             replacing: Boolean
         ) {
             packageNames?.forEach { evictIconsForPackage(it) }
-            refreshAppsAsync()
+            refreshAppsAsync(force = true)
         }
     }
 
     init {
         runCatching { launcherApps?.registerCallback(appsCallback) }
-        refreshAppsAsync()
+        refreshAppsAsync(force = true)
     }
 
-    fun refreshAppsAsync() {
+    fun refreshAppsAsync(force: Boolean = true) {
+        if (!force && _apps.value.isNotEmpty()) {
+            val elapsed = SystemClock.elapsedRealtime() - lastRefreshCompletedAtMs.get()
+            if (elapsed in 0L..RESUME_SCAN_THROTTLE_MS) {
+                return
+            }
+        }
         refreshRequested.set(true)
         scope.launch {
             if (!refreshMutex.tryLock()) return@launch
             try {
                 while (refreshRequested.getAndSet(false)) {
-                    _apps.value = loadInstalledApps()
+                    scanAndPublishInstalledApps()
                 }
             } finally {
                 refreshMutex.unlock()
                 if (refreshRequested.get() && refreshMutex.tryLock()) {
                     try {
                         while (refreshRequested.getAndSet(false)) {
-                            _apps.value = loadInstalledApps()
+                            scanAndPublishInstalledApps()
                         }
                     } finally {
                         refreshMutex.unlock()
@@ -115,15 +135,16 @@ class InstalledAppsRepository(
         }
     }
 
-    private fun loadInstalledApps(): List<AppItem> {
-        val la = launcherApps ?: return emptyList()
+    private fun scanAndPublishInstalledApps() {
+        val la = launcherApps ?: return
         val um = userManager
         val profiles = um?.userProfiles?.ifEmpty { listOf(Process.myUserHandle()) }
             ?: listOf(Process.myUserHandle())
 
         val selfPkg = context.packageName
         val collator = Collator.getInstance(Locale("tr", "TR"))
-        val loaded = ArrayList<AppItem>()
+        val loaded = ArrayList<AppItem>(128)
+        val pendingWarmTargets = ArrayList<Pair<String, LauncherActivityInfo>>(128)
 
         for (profile in profiles) {
             val serial = um?.getSerialNumberForUser(profile) ?: 0L
@@ -153,13 +174,8 @@ class InstalledAppsRepository(
                     userSerial = serial
                 )
 
-                // İkonu arka planda önbelleğe ısıt
                 if (iconCache.get(key.stableId) == null) {
-                    runCatching {
-                        val density = context.resources.displayMetrics.densityDpi
-                        val drawable = info.getIcon(density) ?: info.getBadgedIcon(density)
-                        iconCache.put(key.stableId, drawableToImageBitmap(drawable))
-                    }
+                    pendingWarmTargets += key.stableId to info
                 }
 
                 loaded += AppItem(
@@ -184,7 +200,28 @@ class InstalledAppsRepository(
             isSystemApp = true
         )
 
-        return loaded.sortedWith { a, b -> collator.compare(a.label, b.label) }
+        val sorted = loaded.sortedWith { a, b -> collator.compare(a.label, b.label) }
+        _apps.value = sorted
+        lastRefreshCompletedAtMs.set(SystemClock.elapsedRealtime())
+
+        // Liste yayınlandıktan hemen sonra eksik ikonları arka planda nazikçe GPU'ya ısıt
+        if (pendingWarmTargets.isNotEmpty()) {
+            prewarmJob?.cancel()
+            prewarmJob = scope.launch(Dispatchers.Default) {
+                val density = context.resources.displayMetrics.densityDpi
+                pendingWarmTargets.forEachIndexed { idx, (stableId, info) ->
+                    if (iconCache.get(stableId) == null) {
+                        runCatching {
+                            val drawable = info.getIcon(density) ?: info.getBadgedIcon(density)
+                            iconCache.put(stableId, drawableToImageBitmap(drawable))
+                        }
+                    }
+                    if (idx % 6 == 5) {
+                        yield()
+                    }
+                }
+            }
+        }
     }
 
     fun getCachedIcon(key: AppComponentKey): ImageBitmap? {
@@ -195,26 +232,36 @@ class InstalledAppsRepository(
     }
 
     suspend fun loadIconIfNeeded(key: AppComponentKey): ImageBitmap? {
-        if (key.stableId == HNM_SETTINGS_KEY.stableId) {
-            return iconCache.get(key.stableId)
-                ?: createHnmSettingsIconBitmap().also { iconCache.put(key.stableId, it) }
+        val stableId = key.stableId
+        if (stableId == HNM_SETTINGS_KEY.stableId) {
+            return iconCache.get(stableId)
+                ?: createHnmSettingsIconBitmap().also { iconCache.put(stableId, it) }
         }
-        iconCache.get(key.stableId)?.let { return it }
-        return withContext(Dispatchers.IO) {
-            val la = launcherApps ?: return@withContext null
-            val handle = resolveUserHandle(key.userSerial)
-            val activities = runCatching { la.getActivityList(key.packageName, handle) }
-                .getOrDefault(emptyList())
-            val match = activities.firstOrNull { it.componentName.className == key.className }
-                ?: activities.firstOrNull()
-                ?: return@withContext null
+        iconCache.get(stableId)?.let { return it }
 
-            runCatching {
-                val density = context.resources.displayMetrics.densityDpi
-                val drawable = match.getIcon(density) ?: match.getBadgedIcon(density)
-                drawableToImageBitmap(drawable).also { iconCache.put(key.stableId, it) }
-            }.getOrNull()
+        val deferred = inFlightIconLoads.computeIfAbsent(stableId) {
+            scope.async {
+                try {
+                    iconCache.get(stableId)?.let { return@async it }
+                    val la = launcherApps ?: return@async null
+                    val handle = resolveUserHandle(key.userSerial)
+                    val activities = runCatching { la.getActivityList(key.packageName, handle) }
+                        .getOrDefault(emptyList())
+                    val match = activities.firstOrNull { it.componentName.className == key.className }
+                        ?: activities.firstOrNull()
+                        ?: return@async null
+
+                    runCatching {
+                        val density = context.resources.displayMetrics.densityDpi
+                        val drawable = match.getIcon(density) ?: match.getBadgedIcon(density)
+                        drawableToImageBitmap(drawable).also { iconCache.put(stableId, it) }
+                    }.getOrNull()
+                } finally {
+                    inFlightIconLoads.remove(stableId)
+                }
+            }
         }
+        return deferred.await()
     }
 
     /**
@@ -301,7 +348,7 @@ class InstalledAppsRepository(
         }
     }
 
-    private fun drawableToImageBitmap(drawable: Drawable, targetPx: Int = 180): ImageBitmap {
+    private fun drawableToImageBitmap(drawable: Drawable, targetPx: Int = 168): ImageBitmap {
         val safePx = targetPx.coerceAtLeast(1)
         val bitmap = Bitmap.createBitmap(safePx, safePx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -327,6 +374,8 @@ class InstalledAppsRepository(
     }
 
     companion object {
+        private const val RESUME_SCAN_THROTTLE_MS = 45_000L
+
         val HNM_SETTINGS_KEY = AppComponentKey(
             packageName = "com.hnmlabs.hnmui",
             className = "com.hnmlabs.hnmui.InternalSettings",
