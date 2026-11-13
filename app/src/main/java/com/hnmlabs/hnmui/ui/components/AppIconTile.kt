@@ -1,13 +1,7 @@
 package com.hnmlabs.hnmui.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -37,6 +31,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +58,19 @@ import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.ResolvedHomeItem
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import kotlin.math.PI
+import kotlin.math.sin
+
+/**
+ * Düzenleme (Jiggle) modunda 49 ayrı InfiniteTransition coroutine'i yerine tek bir paylaşımlı
+ * GPU çizim fazı saatini tüm ikonlara dağıtan CompositionLocal.
+ * Değeri yalnızca Modifier.graphicsLayer içinde okunarak 0 recomposition ile 120 FPS titreşim sağlar.
+ */
+val LocalEditJigglePhase = compositionLocalOf<State<Float>?> { null }
+
+private val PlaceholderIconBrush = Brush.linearGradient(
+    colors = listOf(Color(0xFF1E293B), Color(0xFF334155))
+)
 
 /**
  * Squircle maskeli, yay tepkili, bildirim rozetli (badge) ve 120 FPS optimize
@@ -83,71 +92,61 @@ fun AppIconTile(
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
+    val jigglePhaseState = LocalEditJigglePhase.current
 
     var iconBitmap by remember(app.key.stableId) {
         mutableStateOf(cachedIconProvider(app.key))
     }
-    LaunchedEffect(app.key.stableId) {
-        if (iconBitmap == null) {
+    if (iconBitmap == null) {
+        LaunchedEffect(app.key.stableId) {
             iconBitmap = loadIconSuspend(app.key)
         }
     }
 
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.91f else 1f,
-        animationSpec = HnmMotion.iconPressSpring(),
-        label = "iconPressScale"
-    )
-
-    val hashSeed = remember(app.key.stableId) { (app.key.stableId.hashCode() and 0x7FFFFFFF) }
-    val jiggleDurationMs = remember(hashSeed) { 128 + (hashSeed % 26) }
-    val jiggleSign = remember(hashSeed) { if (hashSeed % 2 == 0) 1f else -1f }
-
-    val rawJiggle = if (isEditMode) {
-        val infinite = rememberInfiniteTransition(label = "jiggle_${app.key.stableId}")
-        val angle by infinite.animateFloat(
-            initialValue = -1.55f * jiggleSign,
-            targetValue = 1.55f * jiggleSign,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = jiggleDurationMs, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "jiggleAngle"
-        )
-        angle
-    } else {
-        0f
+    val phaseOffsetRad = remember(app.key.stableId) {
+        (((app.key.stableId.hashCode() and 0x7FFFFFFF) % 360) * (PI / 180.0)).toFloat()
     }
-    val jiggleRotation by animateFloatAsState(
-        targetValue = rawJiggle,
-        animationSpec = HnmMotion.iconPressSpring(),
-        label = "jiggleSmoothSettle"
-    )
 
     val clickModifier = if (enableInternalClickHandling) {
-        Modifier.combinedClickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick,
-            onLongClick = {
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                onLongClick()
-            }
+        val interactionSource = remember { MutableInteractionSource() }
+        val isPressed by interactionSource.collectIsPressedAsState()
+        val internalScaleState = animateFloatAsState(
+            targetValue = if (isPressed) 0.91f else 1f,
+            animationSpec = HnmMotion.iconPressSpring(),
+            label = "iconInternalPressScale"
         )
-    } else {
         Modifier
+            .graphicsLayer {
+                val s = internalScaleState.value
+                scaleX = s
+                scaleY = s
+                rotationZ = if (isEditMode && jigglePhaseState != null) {
+                    sin(jigglePhaseState.value + phaseOffsetRad) * 1.48f
+                } else {
+                    0f
+                }
+            }
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                }
+            )
+    } else {
+        Modifier.graphicsLayer {
+            rotationZ = if (isEditMode && jigglePhaseState != null) {
+                sin(jigglePhaseState.value + phaseOffsetRad) * 1.48f
+            } else {
+                0f
+            }
+        }
     }
 
     Column(
-        modifier = modifier
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-                rotationZ = jiggleRotation
-            }
-            .then(clickModifier),
+        modifier = modifier.then(clickModifier),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -236,11 +235,7 @@ fun AppSquircleArtwork(
             modifier = modifier
                 .size(size)
                 .clip(SquircleShape.Icon)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(Color(0xFF1E293B), Color(0xFF334155))
-                    )
-                ),
+                .background(PlaceholderIconBrush),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -273,64 +268,70 @@ fun FolderIconTile(
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
+    val jigglePhaseState = LocalEditJigglePhase.current
 
-    val targetScale = when {
-        isDropTargetHighlighted -> 1.11f
-        isPressed -> 0.91f
-        else -> 1f
-    }
-    val scale by animateFloatAsState(
-        targetValue = targetScale,
-        animationSpec = HnmMotion.iconPressSpring(),
-        label = "folderPressScale"
-    )
-
-    val folderSeed = remember(folder.id) { (folder.id.hashCode() and 0x7FFFFFFF) }
-    val rawFolderJiggle = if (isEditMode) {
-        val infinite = rememberInfiniteTransition(label = "folderJiggle_${folder.id}")
-        val angle by infinite.animateFloat(
-            initialValue = -1.4f,
-            targetValue = 1.4f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(
-                    durationMillis = 134 + (folderSeed % 20),
-                    easing = FastOutSlowInEasing
-                ),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "folderJiggleAngle"
-        )
-        angle
-    } else {
-        0f
+    val folderPhaseRad = remember(folder.id) {
+        (((folder.id.hashCode() and 0x7FFFFFFF) % 360) * (PI / 180.0)).toFloat()
     }
 
     val gridN = previewColumns.coerceIn(2, 3)
 
-    val clickMod = if (enableInternalClickHandling) {
-        Modifier.combinedClickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick,
-            onLongClick = {
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                onLongClick()
-            }
+    val folderLayerAndClickMod = if (enableInternalClickHandling) {
+        val interactionSource = remember { MutableInteractionSource() }
+        val isPressed by interactionSource.collectIsPressedAsState()
+        val scaleState = animateFloatAsState(
+            targetValue = when {
+                isDropTargetHighlighted -> 1.11f
+                isPressed -> 0.91f
+                else -> 1f
+            },
+            animationSpec = HnmMotion.iconPressSpring(),
+            label = "folderPressScale"
         )
-    } else {
         Modifier
+            .graphicsLayer {
+                val s = scaleState.value
+                scaleX = s
+                scaleY = s
+                rotationZ = if (isEditMode && jigglePhaseState != null) {
+                    sin(jigglePhaseState.value + folderPhaseRad) * 1.38f
+                } else {
+                    0f
+                }
+            }
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                }
+            )
+    } else {
+        val highlightScaleState = if (isDropTargetHighlighted) {
+            animateFloatAsState(
+                targetValue = 1.11f,
+                animationSpec = HnmMotion.iconPressSpring(),
+                label = "folderDropHighlightScale"
+            )
+        } else {
+            null
+        }
+        Modifier.graphicsLayer {
+            val s = highlightScaleState?.value ?: 1f
+            scaleX = s
+            scaleY = s
+            rotationZ = if (isEditMode && jigglePhaseState != null) {
+                sin(jigglePhaseState.value + folderPhaseRad) * 1.38f
+            } else {
+                0f
+            }
+        }
     }
 
     Column(
-        modifier = modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                rotationZ = rawFolderJiggle
-            }
-            .then(clickMod),
+        modifier = modifier.then(folderLayerAndClickMod),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -416,8 +417,8 @@ fun MiniAppIconPreview(
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?
 ) {
     var bmp by remember(app.key.stableId) { mutableStateOf(cachedIconProvider(app.key)) }
-    LaunchedEffect(app.key.stableId) {
-        if (bmp == null) {
+    if (bmp == null) {
+        LaunchedEffect(app.key.stableId) {
             bmp = loadIconSuspend(app.key)
         }
     }

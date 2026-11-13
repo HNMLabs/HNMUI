@@ -367,6 +367,84 @@ class LauncherCoreTest {
         assertEquals(listOf(HomeGridItem.AppTile(appB)), movedWithStaleSlot.pages.first().items)
     }
 
+    @Test
+    fun `squircle shape caches outline instances per size and handles zero or non-finite bounds safely`() {
+        val shape = com.hnmlabs.hnmui.ui.components.SquircleShape(exponent = 4.4f, steps = 72)
+        assertEquals(72, shape.unitX.size)
+        assertTrue(shape.unitX.all { it in -1.0001f..1.0001f })
+        assertTrue(shape.unitY.all { it in -1.0001f..1.0001f })
+
+        var buildCalls = 0
+        val builder: (Float, Float) -> androidx.compose.ui.graphics.Outline = { halfW, halfH ->
+            buildCalls++
+            androidx.compose.ui.graphics.Outline.Rectangle(
+                androidx.compose.ui.geometry.Rect(0f, 0f, halfW * 2f, halfH * 2f)
+            )
+        }
+
+        val first = shape.resolveOutline(androidx.compose.ui.geometry.Size(144f, 144f), builder)
+        val second = shape.resolveOutline(androidx.compose.ui.geometry.Size(144f, 144f), builder)
+        val otherSize = shape.resolveOutline(androidx.compose.ui.geometry.Size(120f, 120f), builder)
+
+        org.junit.Assert.assertSame(first, second)
+        org.junit.Assert.assertNotSame(first, otherSize)
+        assertEquals(2, buildCalls)
+
+        val density = androidx.compose.ui.unit.Density(3f)
+        val zeroOutline = shape.createOutline(
+            size = androidx.compose.ui.geometry.Size.Zero,
+            layoutDirection = androidx.compose.ui.unit.LayoutDirection.Ltr,
+            density = density
+        )
+        val nanOutline = shape.createOutline(
+            size = androidx.compose.ui.geometry.Size(Float.NaN, 100f),
+            layoutDirection = androidx.compose.ui.unit.LayoutDirection.Ltr,
+            density = density
+        )
+        assertTrue(zeroOutline is androidx.compose.ui.graphics.Outline.Rectangle)
+        assertTrue(nanOutline is androidx.compose.ui.graphics.Outline.Rectangle)
+    }
+
+    @Test
+    fun `prepared turkish search query matches pre-folded app items without per-item folding`() {
+        val isCep = sampleApp("com.pozitron.iscep", "İşCep", AppCategory.PRODUCTIVITY)
+        val instagram = sampleApp("com.instagram.android", "Instagram", AppCategory.SOCIAL)
+        val inShot = sampleApp("com.camerasideas.instashot", "InShot", AppCategory.MEDIA)
+
+        val qIscep = com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.prepareQuery("iscep")
+        assertTrue(isCep.matchesPreparedQuery(qIscep))
+        assertTrue(isCep.labelStartsWithPreparedQuery(qIscep))
+        assertFalse(instagram.matchesPreparedQuery(qIscep))
+
+        val qInstaDotted = com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.prepareQuery("İnsta")
+        assertTrue(instagram.matchesPreparedQuery(qInstaDotted))
+        assertTrue(instagram.labelStartsWithPreparedQuery(qInstaDotted))
+        assertTrue(inShot.matchesPreparedQuery(qInstaDotted)) // package contains instashot
+        assertFalse(inShot.labelStartsWithPreparedQuery(qInstaDotted))
+    }
+
+    @Test
+    fun `single-pass app library classifier buckets categories and sorts suggested by launch count`() {
+        val signal = sampleApp("org.thoughtcrime.securesms", "Signal", AppCategory.SOCIAL)
+        val whatsapp = sampleApp("com.whatsapp", "WhatsApp", AppCategory.SOCIAL)
+        val telegram = sampleApp("org.telegram.messenger", "Telegram", AppCategory.SOCIAL)
+        val spotify = sampleApp("com.spotify.music", "Spotify", AppCategory.MEDIA)
+
+        val groups = AppCategoryClassifier.buildAppLibraryGroups(
+            apps = listOf(whatsapp, signal, spotify, telegram),
+            launchCounts = mapOf(whatsapp.key.stableId to 12, telegram.key.stableId to 3)
+        )
+
+        val suggestedGroup = groups.first { it.category == AppCategory.SUGGESTED }
+        assertEquals(listOf(whatsapp, telegram, signal, spotify), suggestedGroup.apps)
+
+        val socialGroup = groups.first { it.category == AppCategory.SOCIAL }
+        assertEquals(listOf(signal, telegram, whatsapp), socialGroup.apps)
+
+        val mediaGroup = groups.first { it.category == AppCategory.MEDIA }
+        assertEquals(listOf(spotify), mediaGroup.apps)
+    }
+
     private fun sampleApp(pkg: String, label: String, category: AppCategory): AppItem {
         return AppItem(
             key = AppComponentKey(packageName = pkg, className = "$pkg.MainActivity"),

@@ -1,5 +1,6 @@
 package com.hnmlabs.hnmui.ui
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -24,12 +25,16 @@ import com.hnmlabs.hnmui.model.ResolvedHomePage
 import com.hnmlabs.hnmui.service.HnmNotificationListenerService
 import com.hnmlabs.hnmui.ui.drag.DragOrigin
 import com.hnmlabs.hnmui.ui.drag.HoverDropTarget
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -38,6 +43,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+@Immutable
 data class ActiveFolderModal(
     val folderId: String?,
     val title: String,
@@ -45,12 +51,14 @@ data class ActiveFolderModal(
     val apps: List<AppItem>
 )
 
+@Immutable
 data class ActiveQuickMenu(
     val app: AppItem,
     val shortcuts: List<AppShortcutItem>,
     val containingFolderId: String? = null
 )
 
+@Immutable
 data class LauncherOverlayState(
     val isSpotlightOpen: Boolean = false,
     val spotlightQuery: String = "",
@@ -66,6 +74,7 @@ data class LauncherOverlayState(
     val isNotificationAccessEnabled: Boolean = false
 )
 
+@Immutable
 data class LauncherUiState(
     val gridSpec: LauncherGridSpec,
     val customization: LauncherCustomizationSettings,
@@ -93,10 +102,32 @@ data class LauncherUiState(
     val isNotificationAccessEnabled: Boolean
 )
 
+@Immutable
+private data class ResolvedWorkspaceSlice(
+    val gridSpec: LauncherGridSpec,
+    val customization: LauncherCustomizationSettings,
+    val allApps: List<AppItem>,
+    val appById: Map<String, AppItem>,
+    val dockApps: List<AppItem>,
+    val homePages: List<ResolvedHomePage>,
+    val existingFolders: List<ResolvedHomeItem.Folder>,
+    val appLibraryGroups: List<AppLibraryGroup>,
+    val suggestedApps: List<AppItem>,
+    val quickNotes: List<QuickNoteItem>,
+    val boundWidgetIds: List<Int>,
+    val totalUnreadBadges: Int
+)
+
 /**
  * HNMUI tek yönlü durum yönetimi (UDF) ViewModel sınıfı.
  * Yüklü uygulamaları, canlı bildirim rozetlerini, 7x7'ye kadar özelleştirilebilir DataStore
  * düzenini, sürükle-bırak motorunu, Denetim Merkezi, Bildirim Merkezi ve HNM Ayarlar katmanlarını yönetir.
+ *
+ * v0.3.3 Performans Mimarisi:
+ * Ağır ızgara/kategori çözümlemesi (workspaceFlow) ile hafif katman geçişleri (overlayState)
+ * birbirinden tamamen ayrılmış ve Dispatchers.Default iş parçacığına taşınmıştır; böylece
+ * Denetim Merkezi, Bildirim Merkezi, HNM Ayarlar veya Spotlight açılırken Main Thread'de
+ * sıfır liste sıralaması ve sıfır normalizasyon çalışır.
  */
 class LauncherViewModel(
     private val appsRepository: InstalledAppsRepository,
@@ -113,12 +144,16 @@ class LauncherViewModel(
     private val defaultCustomization = LauncherCustomizationSettings()
     private val defaultGridSpec = FormFactorPolicy.resolve(392, featureFlags, defaultCustomization)
 
+    private val smallestScreenWidthDpFlow = overlayState
+        .map { it.smallestScreenWidthDp }
+        .distinctUntilChanged()
+
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.Default) {
             combine(
                 appsRepository.apps,
                 layoutRepository.persistedState,
-                overlayState.map { it.smallestScreenWidthDp }.distinctUntilChanged()
+                smallestScreenWidthDpFlow
             ) { apps, persisted, swDp ->
                 Triple(apps, persisted, swDp)
             }
@@ -143,24 +178,32 @@ class LauncherViewModel(
         }
     }
 
-    val uiState: StateFlow<LauncherUiState> = combine(
+    private val workspaceFlow: Flow<ResolvedWorkspaceSlice> = combine(
         appsRepository.apps,
         HnmNotificationListenerService.badgeCounts,
-        HnmNotificationListenerService.activeCards,
         layoutRepository.persistedState,
-        overlayState
-    ) { rawApps, badges, liveCards, persisted, overlays ->
+        smallestScreenWidthDpFlow
+    ) { rawApps, badges, persisted, swDp ->
         val activeCustomization = persisted?.customization ?: defaultCustomization
         val gridSpec = FormFactorPolicy.resolve(
-            smallestScreenWidthDp = overlays.smallestScreenWidthDp,
+            smallestScreenWidthDp = swDp,
             flags = featureFlags,
             customization = activeCustomization
         )
 
-        val badgedApps = rawApps.map { app ->
-            app.copy(badgeCount = badges[app.key.packageName] ?: 0)
+        val badgedApps = if (badges.isEmpty()) {
+            rawApps
+        } else {
+            rawApps.map { app ->
+                val count = badges[app.key.packageName] ?: 0
+                if (count == app.badgeCount) app else app.copy(badgeCount = count)
+            }
         }
-        val appById = badgedApps.associateBy { it.key.stableId }
+
+        val appById = HashMap<String, AppItem>(badgedApps.size * 2)
+        for (app in badgedApps) {
+            appById[app.key.stableId] = app
+        }
         val safeMaxPerPage = gridSpec.maxItemsPerPage.coerceAtLeast(8)
 
         val rawEffectivePersisted = persisted ?: HomeLayoutRepository.buildInitialSeedState(
@@ -222,49 +265,78 @@ class LauncherViewModel(
             ?.take(4)
             ?: badgedApps.take(4)
 
-        val queryTrimmed = overlays.spotlightQuery.trim()
-        val spotlightMatches = if (queryTrimmed.isEmpty()) {
+        ResolvedWorkspaceSlice(
+            gridSpec = gridSpec,
+            customization = activeCustomization,
+            allApps = badgedApps,
+            appById = appById,
+            dockApps = dockApps,
+            homePages = resolvedPages,
+            existingFolders = resolvedFolders,
+            appLibraryGroups = libraryGroups,
+            suggestedApps = suggestedApps,
+            quickNotes = effectivePersisted.quickNotes,
+            boundWidgetIds = effectivePersisted.boundWidgetIds,
+            totalUnreadBadges = badges.values.sum()
+        )
+    }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+
+    private val spotlightMatchesFlow: Flow<List<AppItem>> = combine(
+        workspaceFlow.map { it.allApps }.distinctUntilChanged(),
+        overlayState
+            .map { if (it.isSpotlightOpen) it.spotlightQuery.trim() else "" }
+            .distinctUntilChanged()
+    ) { allApps, trimmedQuery ->
+        if (trimmedQuery.isEmpty() || allApps.isEmpty()) {
             emptyList()
         } else {
-            badgedApps
-                .filter { app ->
-                    TurkishSearchNormalizer.containsMatch(app.label, queryTrimmed) ||
-                        TurkishSearchNormalizer.containsMatch(app.key.packageName, queryTrimmed)
-                }
+            val prepared = TurkishSearchNormalizer.prepareQuery(trimmedQuery)
+            allApps
+                .filter { it.matchesPreparedQuery(prepared) }
                 .sortedWith(
-                    compareByDescending<AppItem> {
-                        TurkishSearchNormalizer.startsWithMatch(it.label, queryTrimmed)
-                    }.thenBy { TurkishSearchNormalizer.foldTurkishI(it.label) }
+                    compareByDescending<AppItem> { it.labelStartsWithPreparedQuery(prepared) }
+                        .thenBy { it.foldedLabel }
                 )
         }
+    }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
 
+    val uiState: StateFlow<LauncherUiState> = combine(
+        workspaceFlow,
+        HnmNotificationListenerService.activeCards,
+        spotlightMatchesFlow,
+        overlayState
+    ) { workspace, liveCards, spotlightMatches, overlays ->
         val syncedFolderModal = overlays.openFolderModal?.let { modal ->
             if (modal.folderId != null) {
-                val liveFolder = resolvedFolders.firstOrNull { it.id == modal.folderId }
+                val liveFolder = workspace.existingFolders.firstOrNull { it.id == modal.folderId }
                 if (liveFolder != null) {
                     modal.copy(title = liveFolder.title, apps = liveFolder.apps)
                 } else {
                     null
                 }
             } else {
-                modal.copy(apps = modal.apps.mapNotNull { appById[it.key.stableId] })
+                modal.copy(apps = modal.apps.mapNotNull { workspace.appById[it.key.stableId] })
             }
         }
 
         LauncherUiState(
-            gridSpec = gridSpec,
-            customization = activeCustomization,
-            allApps = badgedApps,
-            dockApps = dockApps,
-            homePages = resolvedPages,
-            existingFolders = resolvedFolders,
-            appLibraryGroups = libraryGroups,
-            suggestedApps = suggestedApps,
+            gridSpec = workspace.gridSpec,
+            customization = workspace.customization,
+            allApps = workspace.allApps,
+            dockApps = workspace.dockApps,
+            homePages = workspace.homePages,
+            existingFolders = workspace.existingFolders,
+            appLibraryGroups = workspace.appLibraryGroups,
+            suggestedApps = workspace.suggestedApps,
             spotlightMatches = spotlightMatches,
-            quickNotes = effectivePersisted.quickNotes,
+            quickNotes = workspace.quickNotes,
             liveNotifications = liveCards,
-            boundWidgetIds = effectivePersisted.boundWidgetIds,
-            totalUnreadBadges = badges.values.sum(),
+            boundWidgetIds = workspace.boundWidgetIds,
+            totalUnreadBadges = workspace.totalUnreadBadges,
             isSpotlightOpen = overlays.isSpotlightOpen,
             spotlightQuery = overlays.spotlightQuery,
             isControlCenterOpen = overlays.isControlCenterOpen,
@@ -277,36 +349,42 @@ class LauncherViewModel(
             isDefaultLauncher = overlays.isDefaultLauncher,
             isNotificationAccessEnabled = overlays.isNotificationAccessEnabled
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = LauncherUiState(
-            gridSpec = defaultGridSpec,
-            customization = defaultCustomization,
-            allApps = emptyList(),
-            dockApps = emptyList(),
-            homePages = listOf(ResolvedHomePage(id = "page_1", items = emptyList())),
-            existingFolders = emptyList(),
-            appLibraryGroups = emptyList(),
-            suggestedApps = emptyList(),
-            spotlightMatches = emptyList(),
-            quickNotes = emptyList(),
-            liveNotifications = emptyList(),
-            boundWidgetIds = emptyList(),
-            totalUnreadBadges = 0,
-            isSpotlightOpen = false,
-            spotlightQuery = "",
-            isControlCenterOpen = false,
-            isNotificationCenterOpen = false,
-            isHnmSettingsOpen = false,
-            isEditMode = false,
-            openFolderModal = null,
-            quickMenu = null,
-            targetRefreshRateHz = 120,
-            isDefaultLauncher = false,
-            isNotificationAccessEnabled = false
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = LauncherUiState(
+                gridSpec = defaultGridSpec,
+                customization = defaultCustomization,
+                allApps = emptyList(),
+                dockApps = emptyList(),
+                homePages = listOf(ResolvedHomePage(id = "page_1", items = emptyList())),
+                existingFolders = emptyList(),
+                appLibraryGroups = emptyList(),
+                suggestedApps = emptyList(),
+                spotlightMatches = emptyList(),
+                quickNotes = emptyList(),
+                liveNotifications = emptyList(),
+                boundWidgetIds = emptyList(),
+                totalUnreadBadges = 0,
+                isSpotlightOpen = false,
+                spotlightQuery = "",
+                isControlCenterOpen = false,
+                isNotificationCenterOpen = false,
+                isHnmSettingsOpen = false,
+                isEditMode = false,
+                openFolderModal = null,
+                quickMenu = null,
+                targetRefreshRateHz = 120,
+                isDefaultLauncher = false,
+                isNotificationAccessEnabled = false
+            )
         )
-    )
+
+    val useIosStatusBarFlow: Flow<Boolean> = uiState
+        .map { it.customization.useIosStatusBar }
+        .distinctUntilChanged()
 
     fun updateDeviceAndPermissionStatus(
         smallestScreenWidthDp: Int,
@@ -335,7 +413,8 @@ class LauncherViewModel(
             (interceptSettings && app.key.packageName == "com.android.settings")
         ) {
             openHnmSettings()
-            viewModelScope.launch {
+            viewModelScope.launch(Dispatchers.IO) {
+                delay(350L)
                 layoutRepository.recordAppLaunch(app.key)
             }
             return
@@ -343,7 +422,9 @@ class LauncherViewModel(
 
         dismissAllOverlays()
         if (appsRepository.launchApp(app.key)) {
-            viewModelScope.launch {
+            // Pencere geçiş animasyonu tamamlanana kadar bekleyip istatistiği arka planda yaz
+            viewModelScope.launch(Dispatchers.IO) {
+                delay(450L)
                 layoutRepository.recordAppLaunch(app.key)
             }
         }

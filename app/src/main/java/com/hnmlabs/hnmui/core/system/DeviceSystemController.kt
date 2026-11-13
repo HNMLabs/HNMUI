@@ -24,9 +24,20 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
 import androidx.compose.runtime.Immutable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.lang.ref.WeakReference
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Immutable
@@ -101,6 +112,29 @@ data class DeviceAboutSnapshot(
  */
 object DeviceSystemController {
 
+    private data class BrightnessWriteRequest(
+        val appContext: Context,
+        val activityRef: WeakReference<Activity>?,
+        val fraction: Float
+    )
+
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val brightnessWriteFlow = MutableSharedFlow<BrightnessWriteRequest>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    @Volatile
+    private var lastPersistedBrightnessInt: Int = -1
+
+    @Volatile
+    private var windowOverrideResetJob: Job? = null
+
+    private val streamMaxVolumeCache = ConcurrentHashMap<Int, Int>()
+    private val lastDispatchedVolumeStep = ConcurrentHashMap<Int, Int>()
+
     private val _isTorchEnabled = MutableStateFlow(false)
     val isTorchEnabled: StateFlow<Boolean> = _isTorchEnabled.asStateFlow()
 
@@ -110,33 +144,80 @@ object DeviceSystemController {
     @Volatile
     private var cachedTorchCameraId: String? = null
 
+    init {
+        ioScope.launch {
+            brightnessWriteFlow.collect { req ->
+                val canWrite = runCatching { Settings.System.canWrite(req.appContext) }.getOrDefault(false)
+                if (canWrite) {
+                    val targetInt = (req.fraction * 255f).roundToInt().coerceIn(5, 255)
+                    if (targetInt != lastPersistedBrightnessInt) {
+                        runCatching {
+                            val resolver = req.appContext.contentResolver
+                            Settings.System.putInt(
+                                resolver,
+                                Settings.System.SCREEN_BRIGHTNESS_MODE,
+                                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                            )
+                            Settings.System.putInt(
+                                resolver,
+                                Settings.System.SCREEN_BRIGHTNESS,
+                                targetInt
+                            )
+                            lastPersistedBrightnessInt = targetInt
+                        }
+                    }
+                    // Parmağın kaydırmayı bitirmesinden kısa süre sonra pencere geçersiz kılmasını sıfırla
+                    windowOverrideResetJob?.cancel()
+                    windowOverrideResetJob = ioScope.launch {
+                        delay(260L)
+                        mainHandler.post {
+                            runCatching {
+                                req.activityRef?.get()?.window?.let { win ->
+                                    val attrs = win.attributes
+                                    if (attrs.screenBrightness != -1f) {
+                                        attrs.screenBrightness = -1f
+                                        win.attributes = attrs
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // 120Hz dokunuş akışını sistem veritabanı üzerinde saniyede ~28 birleşik yazmaya yumuşat
+                delay(34L)
+            }
+        }
+    }
+
     fun ensureTorchObserver(context: Context) {
         if (torchCallbackRegistered) return
         synchronized(this) {
             if (torchCallbackRegistered) return
             val appCtx = context.applicationContext
-            val cameraManager = runCatching {
-                appCtx.getSystemService(CameraManager::class.java)
-            }.getOrNull() ?: return
-            val targetId = resolveTorchCameraId(cameraManager)
-            runCatching {
-                cameraManager.registerTorchCallback(
-                    object : CameraManager.TorchCallback() {
-                        override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
-                            if (targetId == null || cameraId == targetId) {
-                                _isTorchEnabled.value = enabled
+            ioScope.launch {
+                val cameraManager = runCatching {
+                    appCtx.getSystemService(CameraManager::class.java)
+                }.getOrNull() ?: return@launch
+                val targetId = resolveTorchCameraId(cameraManager)
+                runCatching {
+                    cameraManager.registerTorchCallback(
+                        object : CameraManager.TorchCallback() {
+                            override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
+                                if (targetId == null || cameraId == targetId) {
+                                    _isTorchEnabled.value = enabled
+                                }
                             }
-                        }
 
-                        override fun onTorchModeUnavailable(cameraId: String) {
-                            if (targetId == null || cameraId == targetId) {
-                                _isTorchEnabled.value = false
+                            override fun onTorchModeUnavailable(cameraId: String) {
+                                if (targetId == null || cameraId == targetId) {
+                                    _isTorchEnabled.value = false
+                                }
                             }
-                        }
-                    },
-                    Handler(Looper.getMainLooper())
-                )
-                torchCallbackRegistered = true
+                        },
+                        mainHandler
+                    )
+                    torchCallbackRegistered = true
+                }
             }
         }
     }
@@ -267,73 +348,74 @@ object DeviceSystemController {
     fun setBrightnessFraction(context: Context, activity: Activity?, fraction: Float) {
         if (!fraction.isFinite()) return
         val clamped = fraction.coerceIn(0.02f, 1f)
-        // Pencere parlaklığını izin beklemeden anında 120 FPS tepkiyle güncelle
+        // Pencere parlaklığını sıfır Binder maliyetiyle Main Thread üzerinde anında 120 FPS uygula
         runCatching {
             activity?.window?.let { win ->
                 val attrs = win.attributes
-                attrs.screenBrightness = clamped
-                win.attributes = attrs
-            }
-        }
-
-        if (runCatching { Settings.System.canWrite(context) }.getOrDefault(false)) {
-            runCatching {
-                val resolver = context.contentResolver
-                Settings.System.putInt(
-                    resolver,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                )
-                Settings.System.putInt(
-                    resolver,
-                    Settings.System.SCREEN_BRIGHTNESS,
-                    (clamped * 255f).roundToInt().coerceIn(5, 255)
-                )
-                // Sistem parlaklığı yazıldıysa pencere geçersiz kılmasını sıfırla ki her yerde geçerli olsun
-                activity?.window?.let { win ->
-                    val attrs = win.attributes
-                    attrs.screenBrightness = -1f
+                if (attrs.screenBrightness < 0f || abs(attrs.screenBrightness - clamped) >= 0.004f) {
+                    attrs.screenBrightness = clamped
                     win.attributes = attrs
                 }
             }
         }
+
+        // Kalıcı Settings.System SQLite/Binder yazımını arka plan birleştirici kuyruğa (IO) devret
+        brightnessWriteFlow.tryEmit(
+            BrightnessWriteRequest(
+                appContext = context.applicationContext,
+                activityRef = activity?.let { WeakReference(it) },
+                fraction = clamped
+            )
+        )
     }
 
     fun setAutoBrightness(context: Context, enabled: Boolean): Boolean {
-        if (!runCatching { Settings.System.canWrite(context) }.getOrDefault(false)) return false
-        return runCatching {
-            Settings.System.putInt(
-                context.contentResolver,
-                Settings.System.SCREEN_BRIGHTNESS_MODE,
-                if (enabled) {
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
-                } else {
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                }
-            )
-        }.getOrDefault(false)
+        val appCtx = context.applicationContext
+        if (!runCatching { Settings.System.canWrite(appCtx) }.getOrDefault(false)) return false
+        ioScope.launch {
+            runCatching {
+                Settings.System.putInt(
+                    appCtx.contentResolver,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE,
+                    if (enabled) {
+                        Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+                    } else {
+                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                    }
+                )
+            }
+        }
+        return true
     }
 
     fun setRotationLocked(context: Context, locked: Boolean): Boolean {
-        if (!runCatching { Settings.System.canWrite(context) }.getOrDefault(false)) return false
-        return runCatching {
-            Settings.System.putInt(
-                context.contentResolver,
-                Settings.System.ACCELEROMETER_ROTATION,
-                if (locked) 0 else 1
-            )
-        }.getOrDefault(false)
+        val appCtx = context.applicationContext
+        if (!runCatching { Settings.System.canWrite(appCtx) }.getOrDefault(false)) return false
+        ioScope.launch {
+            runCatching {
+                Settings.System.putInt(
+                    appCtx.contentResolver,
+                    Settings.System.ACCELEROMETER_ROTATION,
+                    if (locked) 0 else 1
+                )
+            }
+        }
+        return true
     }
 
     fun setScreenTimeoutMs(context: Context, timeoutMs: Int): Boolean {
-        if (!runCatching { Settings.System.canWrite(context) }.getOrDefault(false)) return false
-        return runCatching {
-            Settings.System.putInt(
-                context.contentResolver,
-                Settings.System.SCREEN_OFF_TIMEOUT,
-                timeoutMs
-            )
-        }.getOrDefault(false)
+        val appCtx = context.applicationContext
+        if (!runCatching { Settings.System.canWrite(appCtx) }.getOrDefault(false)) return false
+        ioScope.launch {
+            runCatching {
+                Settings.System.putInt(
+                    appCtx.contentResolver,
+                    Settings.System.SCREEN_OFF_TIMEOUT,
+                    timeoutMs
+                )
+            }
+        }
+        return true
     }
 
     fun openWriteSettingsGrant(context: Context) {
@@ -352,7 +434,9 @@ object DeviceSystemController {
 
         fun streamFraction(stream: Int, fallback: Float = 0.5f): Float = runCatching {
             val max = am.getStreamMaxVolume(stream).coerceAtLeast(1)
+            streamMaxVolumeCache[stream] = max
             val cur = am.getStreamVolume(stream).coerceIn(0, max)
+            lastDispatchedVolumeStep[stream] = cur
             (cur.toFloat() / max.toFloat()).takeIf { it.isFinite() } ?: fallback
         }.getOrDefault(fallback)
 
@@ -367,11 +451,25 @@ object DeviceSystemController {
     }
 
     fun setStreamVolumeFraction(context: Context, streamType: Int, fraction: Float) {
-        val am = context.getSystemService(AudioManager::class.java) ?: return
-        val max = am.getStreamMaxVolume(streamType).coerceAtLeast(1)
-        val target = (fraction.coerceIn(0f, 1f) * max).roundToInt().coerceIn(0, max)
-        runCatching {
-            am.setStreamVolume(streamType, target, 0)
+        if (!fraction.isFinite()) return
+        val appCtx = context.applicationContext
+        val cachedMax = streamMaxVolumeCache[streamType]
+        if (cachedMax != null) {
+            val target = (fraction.coerceIn(0f, 1f) * cachedMax).roundToInt().coerceIn(0, cachedMax)
+            if (lastDispatchedVolumeStep[streamType] == target) return
+            lastDispatchedVolumeStep[streamType] = target
+        }
+
+        ioScope.launch {
+            val am = appCtx.getSystemService(AudioManager::class.java) ?: return@launch
+            val max = streamMaxVolumeCache.getOrPut(streamType) {
+                runCatching { am.getStreamMaxVolume(streamType).coerceAtLeast(1) }.getOrDefault(15)
+            }
+            val target = (fraction.coerceIn(0f, 1f) * max).roundToInt().coerceIn(0, max)
+            lastDispatchedVolumeStep[streamType] = target
+            runCatching {
+                am.setStreamVolume(streamType, target, 0)
+            }
         }
     }
 
@@ -388,11 +486,14 @@ object DeviceSystemController {
     }
 
     fun dispatchMediaKey(context: Context, keyCode: Int) {
-        val am = context.getSystemService(AudioManager::class.java) ?: return
-        runCatching {
-            val now = SystemClock.uptimeMillis()
-            am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
-            am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
+        val appCtx = context.applicationContext
+        ioScope.launch {
+            val am = appCtx.getSystemService(AudioManager::class.java) ?: return@launch
+            runCatching {
+                val now = SystemClock.uptimeMillis()
+                am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
+                am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
+            }
         }
     }
 
@@ -448,14 +549,24 @@ object DeviceSystemController {
     }
 
     fun toggleFlashlight(context: Context, enable: Boolean): Boolean {
-        ensureTorchObserver(context)
-        val cameraManager = context.getSystemService(CameraManager::class.java) ?: return false
-        return runCatching {
-            val torchCameraId = resolveTorchCameraId(cameraManager) ?: return false
-            cameraManager.setTorchMode(torchCameraId, enable)
-            _isTorchEnabled.value = enable
-            true
-        }.getOrDefault(false)
+        val appCtx = context.applicationContext
+        ensureTorchObserver(appCtx)
+        _isTorchEnabled.value = enable
+        ioScope.launch {
+            val cameraManager = appCtx.getSystemService(CameraManager::class.java) ?: run {
+                _isTorchEnabled.value = false
+                return@launch
+            }
+            val ok = runCatching {
+                val torchCameraId = resolveTorchCameraId(cameraManager) ?: return@runCatching false
+                cameraManager.setTorchMode(torchCameraId, enable)
+                true
+            }.getOrDefault(false)
+            if (!ok) {
+                _isTorchEnabled.value = !enable
+            }
+        }
+        return true
     }
 
     /**

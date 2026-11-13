@@ -128,6 +128,17 @@ fun ControlCenterOverlay(
     var isRotationLocked by remember { mutableStateOf(false) }
     val isTorchOn by DeviceSystemController.isTorchEnabled.collectAsStateWithLifecycle()
 
+    val calculatorApp = remember(allApps) {
+        allApps.firstOrNull {
+            it.asciiPackage.contains("calc") || it.foldedLabel.contains("hesap")
+        }
+    }
+    val cameraApp = remember(allApps) {
+        allApps.firstOrNull {
+            it.asciiPackage.contains("camera") || it.foldedLabel.contains("kamera")
+        }
+    }
+
     suspend fun refreshSystemState() {
         DeviceSystemController.ensureTorchObserver(context)
         val winBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
@@ -479,11 +490,7 @@ fun ControlCenterOverlay(
                                 active = false,
                                 modifier = Modifier.weight(1f),
                                 onClick = {
-                                    val calc = allApps.firstOrNull {
-                                        TurkishSearchNormalizer.containsMatch(it.key.packageName, "calc") ||
-                                            TurkishSearchNormalizer.containsMatch(it.label, "hesap")
-                                    }
-                                    if (calc != null) onLaunchApp(calc) else onOpenHnmSettings()
+                                    if (calculatorApp != null) onLaunchApp(calculatorApp) else onOpenHnmSettings()
                                 }
                             )
                             QuickToggleTile(
@@ -492,11 +499,7 @@ fun ControlCenterOverlay(
                                 active = false,
                                 modifier = Modifier.weight(1f),
                                 onClick = {
-                                    val cam = allApps.firstOrNull {
-                                        TurkishSearchNormalizer.containsMatch(it.key.packageName, "camera") ||
-                                            TurkishSearchNormalizer.containsMatch(it.label, "kamera")
-                                    }
-                                    if (cam != null) onLaunchApp(cam) else onDismiss()
+                                    if (cameraApp != null) onLaunchApp(cameraApp) else onDismiss()
                                 }
                             )
                         }

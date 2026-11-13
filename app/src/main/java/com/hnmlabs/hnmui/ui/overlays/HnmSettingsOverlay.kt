@@ -736,28 +736,16 @@ private fun CustomizationSubPage(
 
                     SettingsDivider()
 
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Uygulama İkon Boyutu", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                text = "%${customization.iconScalePercent}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = HnmPalette.AccentCyan
-                            )
-                        }
-                        HnmMinimalSlider(
-                            value = customization.iconScalePercent.toFloat(),
-                            valueRange = 80f..120f,
-                            onValueChange = { next ->
-                                onUpdateCustomization {
-                                    it.copy(iconScalePercent = next.roundToInt())
-                                }
+                    HnmSteppedCustomizationSlider(
+                        title = "Uygulama İkon Boyutu",
+                        committedPercent = customization.iconScalePercent,
+                        valueRange = 80f..120f,
+                        onCommitPercent = { committed ->
+                            if (committed != customization.iconScalePercent) {
+                                onUpdateCustomization { it.copy(iconScalePercent = committed) }
                             }
-                        )
-                    }
+                        }
+                    )
 
                     SettingsToggleRow(
                         title = "Uygulama İsimlerini Göster",
@@ -854,28 +842,16 @@ private fun CustomizationSubPage(
                     if (customization.dockVisible) {
                         SettingsDivider()
 
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Dock Boyutu (Küçült / Büyüt)", style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    text = "%${customization.dockScalePercent}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = HnmPalette.AccentCyan
-                                )
-                            }
-                            HnmMinimalSlider(
-                                value = customization.dockScalePercent.toFloat(),
-                                valueRange = 75f..125f,
-                                onValueChange = { next ->
-                                    onUpdateCustomization {
-                                        it.copy(dockScalePercent = next.roundToInt())
-                                    }
+                        HnmSteppedCustomizationSlider(
+                            title = "Dock Boyutu (Küçült / Büyüt)",
+                            committedPercent = customization.dockScalePercent,
+                            valueRange = 75f..125f,
+                            onCommitPercent = { committed ->
+                                if (committed != customization.dockScalePercent) {
+                                    onUpdateCustomization { it.copy(dockScalePercent = committed) }
                                 }
-                            )
-                        }
+                            }
+                        )
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -906,28 +882,16 @@ private fun CustomizationSubPage(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Buzlu Cam Yoğunluğu", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                text = "%${customization.glassOpacityPercent}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = HnmPalette.AccentCyan
-                            )
-                        }
-                        HnmMinimalSlider(
-                            value = customization.glassOpacityPercent.toFloat(),
-                            valueRange = 70f..135f,
-                            onValueChange = { next ->
-                                onUpdateCustomization {
-                                    it.copy(glassOpacityPercent = next.roundToInt())
-                                }
+                    HnmSteppedCustomizationSlider(
+                        title = "Buzlu Cam Yoğunluğu",
+                        committedPercent = customization.glassOpacityPercent,
+                        valueRange = 70f..135f,
+                        onCommitPercent = { committed ->
+                            if (committed != customization.glassOpacityPercent) {
+                                onUpdateCustomization { it.copy(glassOpacityPercent = committed) }
                             }
-                        )
-                    }
+                        }
+                    )
 
                     SettingsDivider()
 
@@ -1596,12 +1560,12 @@ private fun AppsManagerSubPage(
         if (q.isEmpty()) {
             allApps
         } else {
+            val prepared = TurkishSearchNormalizer.prepareQuery(q)
             allApps.filter { app ->
-                TurkishSearchNormalizer.containsMatch(app.label, q) ||
-                    TurkishSearchNormalizer.containsMatch(app.key.packageName, q)
+                app.matchesPreparedQuery(prepared)
             }.sortedWith(
-                compareByDescending<AppItem> { TurkishSearchNormalizer.startsWithMatch(it.label, q) }
-                    .thenBy { TurkishSearchNormalizer.foldTurkishI(it.label) }
+                compareByDescending<AppItem> { it.labelStartsWithPreparedQuery(prepared) }
+                    .thenBy { it.foldedLabel }
             )
         }
     }
@@ -2004,13 +1968,32 @@ private fun NumberPill(
 private fun HnmMinimalSlider(
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: (() -> Unit)? = null
 ) {
-    val safeVal = (if (value.isFinite()) value else valueRange.start)
+    val safeExternal = (if (value.isFinite()) value else valueRange.start)
         .coerceIn(valueRange.start, valueRange.endInclusive)
+    var isDragging by remember { mutableStateOf(false) }
+    var dragValue by remember { mutableFloatStateOf(safeExternal) }
+
+    LaunchedEffect(safeExternal, isDragging) {
+        if (!isDragging) {
+            dragValue = safeExternal
+        }
+    }
+
     Slider(
-        value = safeVal,
-        onValueChange = onValueChange,
+        value = if (isDragging) dragValue else safeExternal,
+        onValueChange = { next ->
+            val clamped = next.coerceIn(valueRange.start, valueRange.endInclusive)
+            isDragging = true
+            dragValue = clamped
+            onValueChange(clamped)
+        },
+        onValueChangeFinished = {
+            isDragging = false
+            onValueChangeFinished?.invoke()
+        },
         valueRange = valueRange,
         colors = SliderDefaults.colors(
             thumbColor = Color.White,
@@ -2018,6 +2001,58 @@ private fun HnmMinimalSlider(
             inactiveTrackColor = Color(0x30FFFFFF)
         )
     )
+}
+
+@Composable
+private fun HnmSteppedCustomizationSlider(
+    title: String,
+    committedPercent: Int,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onCommitPercent: (Int) -> Unit
+) {
+    val externalFloat = committedPercent.toFloat().coerceIn(valueRange.start, valueRange.endInclusive)
+    var isDragging by remember { mutableStateOf(false) }
+    var dragFloat by remember { mutableFloatStateOf(externalFloat) }
+
+    LaunchedEffect(externalFloat, isDragging) {
+        if (!isDragging) {
+            dragFloat = externalFloat
+        }
+    }
+
+    val displayedPercent = (if (isDragging) dragFloat else externalFloat).roundToInt()
+
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = "%$displayedPercent",
+                style = MaterialTheme.typography.labelSmall,
+                color = HnmPalette.AccentCyan
+            )
+        }
+        Slider(
+            value = if (isDragging) dragFloat else externalFloat,
+            onValueChange = { next ->
+                isDragging = true
+                dragFloat = next.coerceIn(valueRange.start, valueRange.endInclusive)
+            },
+            onValueChangeFinished = {
+                val finalInt = dragFloat.roundToInt()
+                isDragging = false
+                onCommitPercent(finalInt)
+            },
+            valueRange = valueRange,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = HnmPalette.AccentBlue,
+                inactiveTrackColor = Color(0x30FFFFFF)
+            )
+        )
+    }
 }
 
 @Composable

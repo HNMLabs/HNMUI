@@ -88,6 +88,7 @@ fun SpotlightOverlay(
 
     LaunchedEffect(visible) {
         if (visible) {
+            kotlinx.coroutines.delay(85L)
             runCatching { focusRequester.requestFocus() }
         }
     }

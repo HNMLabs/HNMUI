@@ -111,7 +111,8 @@ fun HomeGridPage(
         48.dp
     }
 
-    val hoveredTarget = dragController.hoveredTarget
+    val isDragging = dragController.isDragging
+    val hoveredTarget = if (isDragging) dragController.hoveredTarget else null
 
     Column(
         modifier = modifier
@@ -296,28 +297,18 @@ fun HomeGridPage(
                             hoveredTarget.pageIndex == homePageIndex &&
                             hoveredTarget.slotIndex == slotIndex
 
-                        val highlightAlpha by animateFloatAsState(
-                            targetValue = if (isCellHovered && dragController.isDragging) 1f else 0f,
-                            animationSpec = HnmMotion.slotHighlightSpring(),
-                            label = "cellHighlightAlpha"
-                        )
-
-                        val createFolderAlpha by animateFloatAsState(
-                            targetValue = if (isCreateFolderHovered && dragController.isDragging) 1f else 0f,
-                            animationSpec = HnmMotion.slotHighlightSpring(),
-                            label = "createFolderHighlightAlpha"
-                        )
+                        val showCellHighlight = isCellHovered && dragController.isDragging
+                        val showCreateFolderHighlight = isCreateFolderHovered && dragController.isDragging
 
                         Box(
                             modifier = Modifier.weight(1f),
                             contentAlignment = Alignment.TopCenter
                         ) {
-                            if (highlightAlpha > 0.02f) {
+                            if (showCellHighlight) {
                                 Box(
                                     modifier = Modifier
                                         .padding(top = if (gridSpec.iconSizeDp <= 42) 2.dp else 4.dp)
                                         .size(gridSpec.iconSizeDp.dp)
-                                        .graphicsLayer { alpha = highlightAlpha }
                                         .clip(SquircleShape.Icon)
                                         .background(Color(0x2838BDF8))
                                         .border(
@@ -328,16 +319,14 @@ fun HomeGridPage(
                                 )
                             }
 
-                            if (createFolderAlpha > 0.02f) {
-                                val haloScale = 1f + 0.09f * createFolderAlpha
+                            if (showCreateFolderHighlight) {
                                 Box(
                                     modifier = Modifier
                                         .padding(top = if (gridSpec.iconSizeDp <= 42) 0.dp else 1.dp)
                                         .size((gridSpec.iconSizeDp + 8).dp)
                                         .graphicsLayer {
-                                            alpha = createFolderAlpha
-                                            scaleX = haloScale
-                                            scaleY = haloScale
+                                            scaleX = 1.08f
+                                            scaleY = 1.08f
                                         }
                                         .clip(SquircleShape.Icon)
                                         .background(Color(0x45FFFFFF))

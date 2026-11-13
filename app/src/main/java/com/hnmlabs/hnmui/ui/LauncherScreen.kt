@@ -2,7 +2,13 @@ package com.hnmlabs.hnmui.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -17,6 +23,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -44,9 +51,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hnmlabs.hnmui.core.system.DefaultLauncherHelper
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
 import com.hnmlabs.hnmui.data.InstalledAppsRepository
+import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.ResolvedHomeItem
 import com.hnmlabs.hnmui.model.ResolvedHomePage
 import com.hnmlabs.hnmui.ui.components.HnmIosStatusBar
+import com.hnmlabs.hnmui.ui.components.LocalEditJigglePhase
 import com.hnmlabs.hnmui.ui.components.LocalGlassOpacityFactor
 import com.hnmlabs.hnmui.ui.components.LocalHnmTopBarHeight
 import com.hnmlabs.hnmui.ui.drag.DraggingGhostOverlay
@@ -66,7 +75,17 @@ import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.widget.LauncherWidgetHostManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.PI
 import kotlin.math.abs
+
+private val RootScrimBrush = Brush.verticalGradient(
+    colorStops = arrayOf(
+        0.0f to Color(0x3D070B14),
+        0.22f to Color(0x12070B14),
+        0.78f to Color(0x16070B14),
+        1.0f to Color(0x4D070B14)
+    )
+)
 
 /**
  * HNMUI kök uzamsal ekranı.
@@ -144,9 +163,14 @@ fun LauncherScreen(
         }
     }
 
-    val isOnHomeScreenPages = pagerState.currentPage in 1..homePageCount
-    val currentHomePageZeroBased = (pagerState.currentPage - 1)
-        .coerceIn(0, (homePageCount - 1).coerceAtLeast(0))
+    val isOnHomeScreenPages by remember(homePageCount) {
+        derivedStateOf { pagerState.currentPage in 1..homePageCount }
+    }
+    val currentHomePageZeroBased by remember(homePageCount) {
+        derivedStateOf {
+            (pagerState.currentPage - 1).coerceIn(0, (homePageCount - 1).coerceAtLeast(0))
+        }
+    }
 
     var rootWidthPx by remember { mutableFloatStateOf(1080f) }
     var rootHeightPx by remember { mutableFloatStateOf(2340f) }
@@ -168,7 +192,7 @@ fun LauncherScreen(
         }
     }
 
-    LaunchedEffect(dragController.isDragging, dragEdgeDirection, pagerState.currentPage, homePageCount) {
+    LaunchedEffect(dragController.isDragging, dragEdgeDirection, currentHomePageZeroBased, homePageCount) {
         if (dragController.isDragging && dragEdgeDirection != 0) {
             delay(480L)
             val targetPagerPage = (pagerState.currentPage + dragEdgeDirection)
@@ -197,17 +221,33 @@ fun LauncherScreen(
         state.openFolderModal != null ||
         state.quickMenu != null
 
-    // Minimalist iOS derinlik çekilmesi: Üstte bir katman açıldığında arka plan nazikçe %94.5 ölçeğe çekilir
-    val backgroundRecedeScale by animateFloatAsState(
+    // Minimalist iOS derinlik çekilmesi: Değerler yalnızca graphicsLayer (GPU draw) aşamasında okunur!
+    val backgroundRecedeScaleState = animateFloatAsState(
         targetValue = if (anyOverlayOpen) 0.945f else 1f,
         animationSpec = HnmMotion.recedeSpring(),
         label = "bgRecedeScale"
     )
-    val backgroundRecedeAlpha by animateFloatAsState(
+    val backgroundRecedeAlphaState = animateFloatAsState(
         targetValue = if (anyOverlayOpen) 0.62f else 1f,
         animationSpec = HnmMotion.recedeSpring(),
         label = "bgRecedeAlpha"
     )
+
+    // Düzenleme (Jiggle) modunda tüm ekran için TEK bir paylaşımlı sinüs faz saati çalıştır
+    val sharedJigglePhaseState: State<Float>? = if (state.isEditMode) {
+        val jiggleTransition = rememberInfiniteTransition(label = "sharedEditJiggleClock")
+        jiggleTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = (2.0 * PI).toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 256, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "sharedEditJigglePhase"
+        )
+    } else {
+        null
+    }
 
     val topStripPx = remember(density) { with(density) { 62.dp.toPx() } }
     val topPullThresholdPx = remember(density) { with(density) { 24.dp.toPx() } }
@@ -218,24 +258,42 @@ fun LauncherScreen(
     val latestIsOnHomePages by rememberUpdatedState(isOnHomeScreenPages)
     val latestIsEditMode by rememberUpdatedState(state.isEditMode)
 
-    val handleDragMoved: (Offset) -> Unit = { rootPos ->
-        val prevTarget = dragController.hoveredTarget
-        val nextTarget = dragController.updateDragPosition(
-            rootPos = rootPos,
-            currentHomePageIndex = currentHomePageZeroBased,
-            homePages = state.homePages,
-            dockAppsCount = state.dockApps.size,
-            gridSpec = state.gridSpec
-        )
-        if (nextTarget != null && nextTarget != prevTarget) {
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    val latestHomePages by rememberUpdatedState(state.homePages)
+    val latestDockSize by rememberUpdatedState(state.dockApps.size)
+    val latestGridSpec by rememberUpdatedState(state.gridSpec)
+    val latestHomePageIdx by rememberUpdatedState(currentHomePageZeroBased)
+
+    val handleDragMoved: (Offset) -> Unit = remember(dragController, haptics) {
+        { rootPos ->
+            val prevTarget = dragController.hoveredTarget
+            val nextTarget = dragController.updateDragPosition(
+                rootPos = rootPos,
+                currentHomePageIndex = latestHomePageIdx,
+                homePages = latestHomePages,
+                dockAppsCount = latestDockSize,
+                gridSpec = latestGridSpec
+            )
+            if (nextTarget != null && nextTarget != prevTarget) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
         }
+    }
+
+    val onOpenQuickMenuSimple: (AppItem) -> Unit = remember(viewModel) {
+        { app -> viewModel.openQuickMenu(app) }
+    }
+    val onOpenNotificationAccess = remember(context) {
+        { DefaultLauncherHelper.openNotificationListenerSettings(context) }
+    }
+    val onPickWallpaper = remember(context) {
+        { DefaultLauncherHelper.openWallpaperPicker(context) }
     }
 
     CompositionLocalProvider(
         LocalHapticFeedback provides haptics,
         LocalGlassOpacityFactor provides state.gridSpec.glassOpacityFactor,
-        LocalHnmTopBarHeight provides if (state.customization.useIosStatusBar) 38.dp else 0.dp
+        LocalHnmTopBarHeight provides if (state.customization.useIosStatusBar) 38.dp else 0.dp,
+        LocalEditJigglePhase provides sharedJigglePhaseState
     ) {
         Box(
             modifier = Modifier
@@ -244,16 +302,7 @@ fun LauncherScreen(
                     rootWidthPx = it.width.toFloat().coerceAtLeast(1f)
                     rootHeightPx = it.height.toFloat().coerceAtLeast(1f)
                 }
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to Color(0x3D070B14),
-                            0.22f to Color(0x12070B14),
-                            0.78f to Color(0x16070B14),
-                            1.0f to Color(0x4D070B14)
-                        )
-                    )
-                )
+                .background(RootScrimBrush)
                 // Kök Initial-pass aşağı çekme yakalayıcısı: HorizontalPager ve ikonlardan ÖNCE çalışır!
                 .pointerInput(Unit) {
                     val touchSlop = viewConfiguration.touchSlop
@@ -349,9 +398,10 @@ fun LauncherScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        scaleX = backgroundRecedeScale
-                        scaleY = backgroundRecedeScale
-                        alpha = backgroundRecedeAlpha
+                        val s = backgroundRecedeScaleState.value
+                        scaleX = s
+                        scaleY = s
+                        alpha = backgroundRecedeAlphaState.value
                     }
             ) {
                 HorizontalPager(
@@ -360,18 +410,19 @@ fun LauncherScreen(
                     userScrollEnabled = !anyOverlayOpen && !dragController.isDragging,
                     modifier = Modifier.fillMaxSize()
                 ) { pageIndex ->
-                    val pageOffset = ((pagerState.currentPage - pageIndex) +
-                        pagerState.currentPageOffsetFraction).let { abs(it).coerceIn(0f, 1f) }
-                    val subtlePageScale = lerp(0.968f, 1f, 1f - pageOffset)
-                    val subtlePageAlpha = lerp(0.84f, 1f, 1f - pageOffset)
-
+                    // KRİTİK 120 FPS: currentPageOffsetFraction YALNIZCA graphicsLayer içinde okunur;
+                    // sayfa kaydırılırken hiçbir alt ekran yeniden derlenmez (0 recomposition)!
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer {
-                                scaleX = subtlePageScale
-                                scaleY = subtlePageScale
-                                alpha = subtlePageAlpha
+                                val rawOffset = (pagerState.currentPage - pageIndex) +
+                                    pagerState.currentPageOffsetFraction
+                                val clampedOffset = abs(rawOffset).coerceIn(0f, 1f)
+                                val pageScale = lerp(0.968f, 1f, 1f - clampedOffset)
+                                scaleX = pageScale
+                                scaleY = pageScale
+                                alpha = lerp(0.84f, 1f, 1f - clampedOffset)
                             }
                     ) {
                         when (pageIndex) {
@@ -390,11 +441,9 @@ fun LauncherScreen(
                                     cachedIconProvider = viewModel::getCachedIcon,
                                     loadIconSuspend = viewModel::loadIconIfNeeded,
                                     onRequestDefaultLauncher = onRequestDefaultLauncher,
-                                    onRequestNotificationAccess = {
-                                        DefaultLauncherHelper.openNotificationListenerSettings(context)
-                                    },
+                                    onRequestNotificationAccess = onOpenNotificationAccess,
                                     onLaunchApp = viewModel::launchApp,
-                                    onAppLongPress = { viewModel.openQuickMenu(it) },
+                                    onAppLongPress = onOpenQuickMenuSimple,
                                     onAddQuickNote = viewModel::addQuickNote,
                                     onToggleQuickNote = viewModel::toggleQuickNote,
                                     onDeleteQuickNote = viewModel::deleteQuickNote,
@@ -410,7 +459,7 @@ fun LauncherScreen(
                                     cachedIconProvider = viewModel::getCachedIcon,
                                     loadIconSuspend = viewModel::loadIconIfNeeded,
                                     onLaunchApp = viewModel::launchApp,
-                                    onAppLongPress = { viewModel.openQuickMenu(it) },
+                                    onAppLongPress = onOpenQuickMenuSimple,
                                     onExpandCategory = viewModel::openAppLibraryCategory
                                 )
                             }
@@ -431,7 +480,7 @@ fun LauncherScreen(
                                     loadIconSuspend = viewModel::loadIconIfNeeded,
                                     onRequestDefaultLauncher = onRequestDefaultLauncher,
                                     onAppClick = viewModel::launchApp,
-                                    onAppLongPress = { viewModel.openQuickMenu(it) },
+                                    onAppLongPress = onOpenQuickMenuSimple,
                                     onDismissQuickMenuAndEnterEdit = viewModel::enterEditModeForDrag,
                                     onDragMoved = handleDragMoved,
                                     onDragEnded = viewModel::commitDragDrop,
@@ -439,9 +488,7 @@ fun LauncherScreen(
                                     onFolderClick = viewModel::openHomeFolder,
                                     onOpenHnmSettings = viewModel::openHnmSettings,
                                     onToggleEditMode = viewModel::toggleEditMode,
-                                    onPickWallpaper = {
-                                        DefaultLauncherHelper.openWallpaperPicker(context)
-                                    }
+                                    onPickWallpaper = onPickWallpaper
                                 )
                             }
                         }
@@ -479,7 +526,7 @@ fun LauncherScreen(
                         loadIconSuspend = viewModel::loadIconIfNeeded,
                         onSearchPillClick = viewModel::openSpotlight,
                         onAppClick = viewModel::launchApp,
-                        onAppLongPress = { viewModel.openQuickMenu(it) },
+                        onAppLongPress = onOpenQuickMenuSimple,
                         onDismissQuickMenuAndEnterEdit = viewModel::enterEditModeForDrag,
                         onDragMoved = handleDragMoved,
                         onDragEnded = viewModel::commitDragDrop

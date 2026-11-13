@@ -75,13 +75,13 @@ object AppCategoryClassifier {
     ): List<AppLibraryGroup> {
         if (apps.isEmpty()) return emptyList()
 
-        val result = ArrayList<AppLibraryGroup>()
+        val result = ArrayList<AppLibraryGroup>(8)
 
         val suggested = apps
             .sortedWith(
                 compareByDescending<AppItem> { launchCounts[it.key.stableId] ?: 0 }
                     .thenByDescending { it.badgeCount }
-                    .thenBy { TurkishSearchNormalizer.foldTurkishI(it.label) }
+                    .thenBy { it.foldedLabel }
             )
             .take(8)
         if (suggested.isNotEmpty()) {
@@ -89,32 +89,38 @@ object AppCategoryClassifier {
         }
 
         val recent = apps
+            .asSequence()
             .filter { !it.isSystemApp && it.firstInstallTimeMillis > 0L }
             .sortedByDescending { it.firstInstallTimeMillis }
             .take(8)
+            .toList()
             .ifEmpty { apps.take(4) }
         if (recent.isNotEmpty()) {
             result += AppLibraryGroup(AppCategory.RECENTLY_ADDED, recent)
         }
 
-        val orderedCategories = listOf(
-            AppCategory.SOCIAL,
-            AppCategory.PRODUCTIVITY,
-            AppCategory.MEDIA,
-            AppCategory.UTILITIES,
-            AppCategory.GAMES,
-            AppCategory.OTHER
-        )
+        val buckets = java.util.EnumMap<AppCategory, MutableList<AppItem>>(AppCategory::class.java)
+        for (app in apps) {
+            buckets.getOrPut(app.category) { ArrayList() }.add(app)
+        }
 
         for (category in orderedCategories) {
-            val matching = apps
-                .filter { it.category == category }
-                .sortedBy { TurkishSearchNormalizer.foldTurkishI(it.label) }
-            if (matching.isNotEmpty()) {
+            val matching = buckets[category]
+            if (!matching.isNullOrEmpty()) {
+                matching.sortBy { it.foldedLabel }
                 result += AppLibraryGroup(category, matching)
             }
         }
 
         return result
     }
+
+    private val orderedCategories = listOf(
+        AppCategory.SOCIAL,
+        AppCategory.PRODUCTIVITY,
+        AppCategory.MEDIA,
+        AppCategory.UTILITIES,
+        AppCategory.GAMES,
+        AppCategory.OTHER
+    )
 }

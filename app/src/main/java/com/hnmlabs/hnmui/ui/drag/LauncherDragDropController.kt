@@ -109,7 +109,9 @@ class LauncherDragDropController {
         get() = activeDrag != null
 
     fun updateGridBounds(homePageIndex: Int, rect: Rect) {
-        gridBoundsByPage[homePageIndex] = rect
+        if (gridBoundsByPage[homePageIndex] != rect) {
+            gridBoundsByPage[homePageIndex] = rect
+        }
     }
 
     fun prunePageBounds(validPageCount: Int) {
@@ -119,13 +121,22 @@ class LauncherDragDropController {
     }
 
     fun updateDockBounds(rect: Rect?) {
-        dockBoundsInRoot = rect
+        if (dockBoundsInRoot != rect) {
+            dockBoundsInRoot = rect
+        }
     }
 
     fun startDrag(origin: DragOrigin, initialRootPos: Offset) {
         activeDrag = origin
         pointerInRoot = initialRootPos
         hoveredTarget = null
+    }
+
+    private fun setHoveredIfChanged(next: HoverDropTarget?): HoverDropTarget? {
+        if (hoveredTarget != next) {
+            hoveredTarget = next
+        }
+        return next
     }
 
     fun updateDragPosition(
@@ -166,9 +177,7 @@ class LauncherDragDropController {
                 val relX = ((rootPos.x - dockRect.left) / dockRect.width.coerceAtLeast(1f))
                     .coerceIn(0f, 0.999f)
                 val insertIdx = (relX * effectiveSlots).toInt().coerceIn(0, effectiveSlots - 1)
-                val target = HoverDropTarget.DockCell(insertIdx)
-                hoveredTarget = target
-                return target
+                return setHoveredIfChanged(HoverDropTarget.DockCell(insertIdx))
             }
         }
 
@@ -194,13 +203,13 @@ class LauncherDragDropController {
                 existingItem is ResolvedHomeItem.Folder &&
                 distFromCellCenter < minOf(cellW, cellH) * 0.34f
             ) {
-                val mergeTarget = HoverDropTarget.MergeIntoFolder(
-                    folderId = existingItem.id,
-                    pageIndex = safePageIdx,
-                    slotIndex = slotIdx
+                return setHoveredIfChanged(
+                    HoverDropTarget.MergeIntoFolder(
+                        folderId = existingItem.id,
+                        pageIndex = safePageIdx,
+                        slotIndex = slotIdx
+                    )
                 )
-                hoveredTarget = mergeTarget
-                return mergeTarget
             }
 
             if (draggingAppOnly &&
@@ -208,25 +217,24 @@ class LauncherDragDropController {
                 existingItem.app.key.stableId != draggedAppStableId &&
                 distFromCellCenter < minOf(cellW, cellH) * 0.28f
             ) {
-                val createFolderTarget = HoverDropTarget.CreateFolderWithApp(
-                    targetApp = existingItem.app,
+                return setHoveredIfChanged(
+                    HoverDropTarget.CreateFolderWithApp(
+                        targetApp = existingItem.app,
+                        pageIndex = safePageIdx,
+                        slotIndex = slotIdx
+                    )
+                )
+            }
+
+            return setHoveredIfChanged(
+                HoverDropTarget.HomeCell(
                     pageIndex = safePageIdx,
                     slotIndex = slotIdx
                 )
-                hoveredTarget = createFolderTarget
-                return createFolderTarget
-            }
-
-            val cellTarget = HoverDropTarget.HomeCell(
-                pageIndex = safePageIdx,
-                slotIndex = slotIdx
             )
-            hoveredTarget = cellTarget
-            return cellTarget
         }
 
-        hoveredTarget = null
-        return null
+        return setHoveredIfChanged(null)
     }
 
     fun finishDrag(): Pair<DragOrigin, HoverDropTarget?>? {
@@ -282,20 +290,19 @@ fun Modifier.launcherDraggableItem(
     val currentOnDragEnded by rememberUpdatedState(onDragEnded)
 
     var isPressed by remember { mutableStateOf(false) }
-    val pressScale by animateFloatAsState(
+    val pressScaleState = animateFloatAsState(
         targetValue = if (isPressed) 0.91f else 1f,
         animationSpec = HnmMotion.iconPressSpring(),
         label = "draggablePressScale"
     )
 
-    val isThisItemActivelyDragged = controller.activeDrag?.draggedItemId == keyId
-
     this
         .onGloballyPositioned { coords -> itemCoords = coords }
         .graphicsLayer {
-            scaleX = pressScale
-            scaleY = pressScale
-            alpha = if (isThisItemActivelyDragged) 0f else 1f
+            val s = pressScaleState.value
+            scaleX = s
+            scaleY = s
+            alpha = if (controller.activeDrag?.draggedItemId == keyId) 0f else 1f
         }
         .pointerInput(keyId) {
             val touchSlop = viewConfiguration.touchSlop
@@ -432,7 +439,7 @@ fun DraggingGhostOverlay(
     val density = LocalDensity.current
     val halfPx = remember(iconSize, density) { with(density) { (iconSize * 1.16f / 2f).toPx() } }
 
-    val liftScale by animateFloatAsState(
+    val liftScaleState = animateFloatAsState(
         targetValue = 1.16f,
         animationSpec = HnmMotion.dragLiftSpring(),
         label = "ghostLiftScale"
@@ -442,10 +449,11 @@ fun DraggingGhostOverlay(
         Box(
             modifier = Modifier
                 .graphicsLayer {
+                    val s = liftScaleState.value
                     translationX = controller.pointerInRoot.x - halfPx
                     translationY = controller.pointerInRoot.y - halfPx
-                    scaleX = liftScale
-                    scaleY = liftScale
+                    scaleX = s
+                    scaleY = s
                     alpha = 0.94f
                 }
                 .size(iconSize * 1.16f),
@@ -499,8 +507,8 @@ private fun GhostAppArtwork(
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?
 ) {
     var bmp by remember(app.key.stableId) { mutableStateOf(cachedIconProvider(app.key)) }
-    LaunchedEffect(app.key.stableId) {
-        if (bmp == null) {
+    if (bmp == null) {
+        LaunchedEffect(app.key.stableId) {
             bmp = loadIconSuspend(app.key)
         }
     }

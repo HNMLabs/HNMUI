@@ -5,6 +5,20 @@ All notable changes to **HNMUI** are documented in this file.
 
 ---
 
+## [0.3.3-alpha] — 2026-11-13 (Zero-Freeze & 120 FPS Fluidity Engine)
+
+### ⚡ Performance & Fluidity / Performans ve Sıfır Donma Motoru
+- **EN:** Eliminated synchronous Main-Thread Binder/SQLite IPC stalls in `DeviceSystemController` (`setBrightnessFraction`, `setStreamVolumeFraction`, `toggleFlashlight`, `dispatchMediaKey`, `setAutoBrightness`, `setRotationLocked`, `setScreenTimeoutMs`) via conflated `Dispatchers.IO` pipelines and cached stream bounds.
+- **EN:** Upgraded `LauncherScreen`, `HomeGridPage`, `AppIconTile`, and `LauncherDragDropController` to a pure **Draw-Phase 120Hz Pipeline**: `HorizontalPager` offset math, overlay background depth recession (`94.5%`), drag ghost scale, and shared `LocalEditJigglePhase` icon jiggle all execute inside `Modifier.graphicsLayer { ... }` with **zero composition/layout invalidations** and zero idle per-cell `Animatable` allocations.
+- **EN:** Precomputed `SquircleShape` unit superellipse vertices with a thread-safe LRU `Outline` cache (zero `sin`/`cos`/`pow` or `Path` allocations while scrolling), hoisted `GlassSurface` border/fill brushes, and annotated all UI/domain state models `@Immutable`.
+- **EN:** Decoupled `InstalledAppsRepository` cold-start app emission from cooperative background icon pre-warming (`512`-entry LRU cache + `inFlightIconLoads` deduplication + `45s` `onResume` scan throttle), moved `LauncherActivity` permission/role checks off the UI thread, cached decoded `HomeLayoutRepository` JSON on `Dispatchers.IO`, deferred `recordAppLaunch` by `450ms` after app start, and added `HnmSteppedCustomizationSlider` + pre-folded `PreparedSearchQuery` matching.
+- **TR:** Denetim Merkezi ve HNM Ayarlar'daki parlaklık, ses, el feneri, medya ve döndürme kilidi işlemlerinin Main Thread üzerindeki senkron Binder/SQLite IPC blokajları tamamen kaldırıldı (`Dispatchers.IO` conflated akış mimarisi + yerel sürgü takibi).
+- **TR:** `LauncherScreen`, `HomeGridPage`, `AppIconTile` ve `LauncherDragDropController` tamamen **Draw-Phase (GPU Çizim Katmanı)** mimarisine geçirildi: sayfa kaydırma (`HorizontalPager`), arka plan derinlik çekilmesi, sürükle-bırak ve tek saatli (`LocalEditJigglePhase`) jiggle animasyonları **sıfır recomposition** ve sıfır boşta hücre animatörü ile sabit **120 FPS** çalışır.
+- **TR:** `SquircleShape` süper-elips trigonometrisi önbelleğe alındı (`LRU Outline Cache`), `GlassSurface` fırçaları sabitlendi, tüm veri/arayüz modelleri `@Immutable` yapıldı ve Türkçe arama (`PreparedSearchQuery`) önden katlanmış alanlarla sıfır tahsisatlı hale getirildi.
+- **TR:** Açılışta uygulama listesi ikon yüklemesini beklemeden anında ekrana gelir (`512` kapasiteli LRU önbellek + tekrarlı yükleme birleştirme + `45 sn` `onResume` tarama koruması), `LauncherActivity` izin kontrolleri arka plana taşındı ve uygulama başlatma animasyonunun takılmaması için sayaç yazımı `450 ms` ertelendi.
+
+---
+
 ## [0.3.2-alpha] — 2026-11-13 (Bug Hunt & Stability Sweep)
 
 ### 🐛 Fixed / Düzeltilenler

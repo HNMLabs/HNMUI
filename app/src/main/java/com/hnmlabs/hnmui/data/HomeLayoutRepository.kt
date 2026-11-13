@@ -17,9 +17,13 @@ import com.hnmlabs.hnmui.model.HomePageModel
 import com.hnmlabs.hnmui.model.LauncherCustomizationSettings
 import com.hnmlabs.hnmui.model.PersistedHomeState
 import com.hnmlabs.hnmui.model.QuickNoteItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.IOException
@@ -43,6 +47,34 @@ class HomeLayoutRepository(
     }
 
     private val stateKey = stringPreferencesKey("persisted_home_state_v1")
+    private val decodeCacheLock = Any()
+    private var cachedRawJson: String? = null
+    private var cachedDecodedState: PersistedHomeState? = null
+
+    private fun decodeCached(raw: String): PersistedHomeState? {
+        synchronized(decodeCacheLock) {
+            if (raw == cachedRawJson && cachedDecodedState != null) {
+                return cachedDecodedState
+            }
+        }
+        val decoded = runCatching { json.decodeFromString<PersistedHomeState>(raw) }.getOrNull()
+        if (decoded != null) {
+            synchronized(decodeCacheLock) {
+                cachedRawJson = raw
+                cachedDecodedState = decoded
+            }
+        }
+        return decoded
+    }
+
+    private fun encodeAndPrimeCache(state: PersistedHomeState): String {
+        val encoded = json.encodeToString(state)
+        synchronized(decodeCacheLock) {
+            cachedRawJson = encoded
+            cachedDecodedState = state
+        }
+        return encoded
+    }
 
     val persistedState: Flow<PersistedHomeState?> = context.homeLayoutDataStore.data
         .catch { err ->
@@ -50,8 +82,10 @@ class HomeLayoutRepository(
         }
         .map { prefs ->
             val raw = prefs[stateKey] ?: return@map null
-            runCatching { json.decodeFromString<PersistedHomeState>(raw) }.getOrNull()
+            decodeCached(raw)
         }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.IO)
 
     /**
      * İlk tohumlamayı (initial seed), HNM Ayarlar ikonu göçünü ve kaldırılmış (ghost)
@@ -61,17 +95,16 @@ class HomeLayoutRepository(
         installedApps: List<AppItem>,
         maxPerPage: Int,
         dockMaxItems: Int
-    ) {
-        if (installedApps.isEmpty()) return
+    ) = withContext(Dispatchers.IO) {
+        if (installedApps.isEmpty()) return@withContext
         val installedIds = installedApps.mapTo(HashSet(installedApps.size)) { it.key.stableId }
 
         context.homeLayoutDataStore.edit { prefs ->
-            val existing = prefs[stateKey]
-                ?.let { runCatching { json.decodeFromString<PersistedHomeState>(it) }.getOrNull() }
+            val existing = prefs[stateKey]?.let { decodeCached(it) }
 
             if (existing == null) {
                 val seeded = buildInitialSeedState(installedApps, maxPerPage, dockMaxItems)
-                prefs[stateKey] = json.encodeToString(seeded)
+                prefs[stateKey] = encodeAndPrimeCache(seeded)
                 return@edit
             }
 
@@ -405,13 +438,15 @@ class HomeLayoutRepository(
         }
     }
 
-    private suspend fun mutateState(transform: (PersistedHomeState) -> PersistedHomeState) {
+    private suspend fun mutateState(
+        transform: (PersistedHomeState) -> PersistedHomeState
+    ) = withContext(Dispatchers.IO) {
         context.homeLayoutDataStore.edit { prefs ->
-            val current = prefs[stateKey]
-                ?.let { runCatching { json.decodeFromString<PersistedHomeState>(it) }.getOrNull() }
-                ?: PersistedHomeState()
+            val current = prefs[stateKey]?.let { decodeCached(it) } ?: PersistedHomeState()
             val updated = transform(current)
-            prefs[stateKey] = json.encodeToString(updated)
+            if (updated != current || prefs[stateKey] == null) {
+                prefs[stateKey] = encodeAndPrimeCache(updated)
+            }
         }
     }
 
