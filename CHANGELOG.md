@@ -5,6 +5,21 @@ All notable changes to **HNMUI** are documented in this file.
 
 ---
 
+## [0.3.2-alpha] — 2026-11-13 (Bug Hunt & Stability Sweep)
+
+### 🐛 Fixed / Düzeltilenler
+- **EN:** Unified UI ↔ DataStore page/slot normalization (`normalizePages`, `pruneUninstalledAndNormalize`) with identity-verified drag sources (`expectedItemId`, `expectedAppKey`), eliminating shifted-slot drops and ghost uninstalled apps.
+- **EN:** Added iOS-style **App-on-App Drag Folder Creation** (`HoverDropTarget.CreateFolderWithApp` + frosted squircle halo) and prevented Dock + Folder app duplication.
+- **EN:** Introduced `TurkishSearchNormalizer` fixing Turkish `'I' / 'İ' / 'ı' / 'i'` search mismatches (`"InShot"` ↔ `"inshot"`, `"Instagram"` ↔ `"insta"`, `"İşCep"` ↔ `"iscep"`) across Spotlight, App Library, Settings, and `AppCategoryClassifier`.
+- **EN:** Removed impure `viewModelScope.launch` side-effects from `LauncherViewModel.uiState` `combine`, added DataStore `ReplaceFileCorruptionHandler` + `IOException` recovery, coalesced `InstalledAppsRepository` scans, added `FLAG_ACTIVITY_NEW_TASK` fallback, and evicted updated/uninstalled icons from cache.
+- **EN:** Wired `customization.hapticFeedbackEnabled` globally via `CompositionLocalProvider(LocalHapticFeedback)`, synced Flashlight state across Control Center & Notification Center via `CameraManager.TorchCallback`, fixed Today View orphan widgets / `key(widgetId)` / `%0` battery fallback, bound `BuildConfig.VERSION_NAME` in Settings with `Dispatchers.IO` + `ON_RESUME` snapshots, deduplicated `LazyColumn` notification keys, guarded multi-touch dual-drag, and grouped Kotlin/AndroidX Dependabot PRs.
+- **TR:** UI ile DataStore arasındaki sayfa/slot senkronizasyonu (`normalizePages` + kimlik doğrulamalı sürükleme) birleştirildi; silinen uygulamaların hayalet ikonları ve 1 uygulamalı klasör kalıntıları otomatik temizlendi.
+- **TR:** Bir uygulamayı başka bir uygulamanın üstüne sürükleyip bırakarak **yeni klasör oluşturma** (buzlu squircle önizleme halkası ile) eklendi; Dock ve Klasör kopyalanma hatası giderildi.
+- **TR:** `TurkishSearchNormalizer` ile Türkçe/İngilizce `'I' / 'İ' / 'ı' / 'i'` arama hatası (`"InShot"`, `"Instagram"`, `"İşCep"`, `"7×7 Izgara"`) Spotlight, Uygulama Arşivi ve Ayarlar genelinde çözüldü; arama sonuçlarına uzun basma menüsü eklendi.
+- **TR:** Haptic Touch kapatma ayarı tüm yüzeylere bağlandı, El Feneri durumu `TorchCallback` ile senkronize edildi, Today View widget/pil hataları ve HNM Ayarlar sürüm (`BuildConfig.VERSION_NAME`) / arka plan yenileme sorunları giderildi.
+
+---
+
 ## [0.3.1-alpha] — 2026-11-12 (Hotfix)
 
 ### 🛠️ Fixed / Düzeltilenler

@@ -75,13 +75,19 @@ sealed interface HoverDropTarget {
         val pageIndex: Int,
         val slotIndex: Int
     ) : HoverDropTarget
+    data class CreateFolderWithApp(
+        val targetApp: AppItem,
+        val pageIndex: Int,
+        val slotIndex: Int
+    ) : HoverDropTarget
     data class DockCell(val insertIndex: Int) : HoverDropTarget
 }
 
 /**
  * 120 FPS iOS SpringBoard tarzı sürükle-bırak durum yöneticisi.
  * Ana ekran ızgarası içinde sıralama, sayfalar arası kenar geçişi, klasöre bırakma,
- * Dock'a uygulama sürükleme ve Dock'tan uygulamayı ana ekrana çıkarma akışlarını yönetir.
+ * başka bir uygulamanın üstüne bırakarak klasör oluşturma, Dock'a uygulama sürükleme
+ * ve Dock'tan uygulamayı ana ekrana çıkarma akışlarını yönetir.
  */
 @Stable
 class LauncherDragDropController {
@@ -104,6 +110,12 @@ class LauncherDragDropController {
 
     fun updateGridBounds(homePageIndex: Int, rect: Rect) {
         gridBoundsByPage[homePageIndex] = rect
+    }
+
+    fun prunePageBounds(validPageCount: Int) {
+        val safeCount = validPageCount.coerceAtLeast(1)
+        val staleKeys = gridBoundsByPage.keys.filter { it >= safeCount }
+        staleKeys.forEach { gridBoundsByPage.remove(it) }
     }
 
     fun updateDockBounds(rect: Rect?) {
@@ -129,6 +141,10 @@ class LauncherDragDropController {
         val draggingAppOnly = when (origin) {
             is DragOrigin.DockSlot -> true
             is DragOrigin.HomeSlot -> origin.item is ResolvedHomeItem.App
+        }
+        val draggedAppStableId = when (origin) {
+            is DragOrigin.DockSlot -> origin.app.key.stableId
+            is DragOrigin.HomeSlot -> (origin.item as? ResolvedHomeItem.App)?.app?.key?.stableId
         }
 
         // 1) Alt Dock bırakma bölgesi kontrolü (klasörler Dock'a girmez, uygulamalar girer/çıkar)
@@ -156,7 +172,7 @@ class LauncherDragDropController {
             }
         }
 
-        // 2) Ana ekran ızgara hücresi veya mevcut klasör içi kontrolü
+        // 2) Ana ekran ızgara hücresi, klasör birleştirme veya uygulama üstüne bırakıp klasör oluşturma kontrolü
         val safePageIdx = currentHomePageIndex.coerceIn(0, (homePages.size - 1).coerceAtLeast(0))
         val gridRect = gridBoundsByPage[safePageIdx]
         if (gridRect != null && gridRect.width > 1f && gridRect.height > 1f) {
@@ -185,6 +201,20 @@ class LauncherDragDropController {
                 )
                 hoveredTarget = mergeTarget
                 return mergeTarget
+            }
+
+            if (draggingAppOnly &&
+                existingItem is ResolvedHomeItem.App &&
+                existingItem.app.key.stableId != draggedAppStableId &&
+                distFromCellCenter < minOf(cellW, cellH) * 0.28f
+            ) {
+                val createFolderTarget = HoverDropTarget.CreateFolderWithApp(
+                    targetApp = existingItem.app,
+                    pageIndex = safePageIdx,
+                    slotIndex = slotIdx
+                )
+                hoveredTarget = createFolderTarget
+                return createFolderTarget
             }
 
             val cellTarget = HoverDropTarget.HomeCell(
@@ -271,6 +301,8 @@ fun Modifier.launcherDraggableItem(
             val touchSlop = viewConfiguration.touchSlop
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
+                // Çoklu dokunuş koruması: Başka bir parmak zaten ikon sürüklüyorsa ikinci sürüklemeyi engelle
+                if (controller.isDragging) return@awaitEachGesture
                 var draggingStarted = false
                 try {
                     isPressed = true

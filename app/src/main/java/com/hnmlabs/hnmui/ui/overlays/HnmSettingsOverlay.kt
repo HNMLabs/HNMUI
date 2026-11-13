@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -66,12 +65,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,8 +85,18 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.hnmlabs.hnmui.BuildConfig
+import com.hnmlabs.hnmui.core.system.BatterySnapshot
+import com.hnmlabs.hnmui.core.system.ConnectivitySnapshot
 import com.hnmlabs.hnmui.core.system.DefaultLauncherHelper
+import com.hnmlabs.hnmui.core.system.DeviceAboutSnapshot
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
+import com.hnmlabs.hnmui.core.system.DisplaySnapshot
+import com.hnmlabs.hnmui.core.system.StorageAndMemorySnapshot
+import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.data.InstalledAppsRepository
 import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
@@ -97,8 +108,39 @@ import com.hnmlabs.hnmui.ui.components.SquircleShape
 import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.roundToInt
+
+@Composable
+private fun <T> rememberAsyncResumableSnapshot(
+    key: Any? = Unit,
+    initial: () -> T,
+    loader: suspend () -> T
+): T {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
+    var state by remember(key) { mutableStateOf(initial()) }
+
+    LaunchedEffect(key) {
+        state = withContext(Dispatchers.IO) { loader() }
+    }
+
+    DisposableEffect(lifecycleOwner, key) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                coroutineScope.launch {
+                    state = withContext(Dispatchers.IO) { loader() }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    return state
+}
 
 enum class SettingsRoute(val titleTr: String) {
     ROOT("Ayarlar"),
@@ -269,16 +311,71 @@ private fun SettingsRootPage(
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
-    val trLocale = remember { Locale("tr", "TR") }
-    val battery = remember { DeviceSystemController.readBatterySnapshot(context) }
-    val connectivity = remember { DeviceSystemController.readConnectivitySnapshot(context) }
-    val storage = remember { DeviceSystemController.readStorageAndMemorySnapshot(context) }
-    val about = remember { DeviceSystemController.readDeviceAboutSnapshot(context, targetRefreshRateHz) }
+    val battery = rememberAsyncResumableSnapshot(
+        initial = {
+            BatterySnapshot(
+                levelPercent = 100,
+                isCharging = false,
+                sourceLabel = "Pil Kullanımda",
+                healthLabel = "İyi (%100 Normal)",
+                temperatureCelsius = 28.5f,
+                voltageVolts = 4.1f,
+                currentMilliAmps = 0,
+                technology = "Li-ion",
+                isPowerSaveMode = false
+            )
+        },
+        loader = { DeviceSystemController.readBatterySnapshot(context) }
+    )
+    val connectivity = rememberAsyncResumableSnapshot(
+        initial = {
+            ConnectivitySnapshot(
+                isWifiConnected = true,
+                isCellularConnected = false,
+                isAirplaneMode = false,
+                isBluetoothEnabled = false
+            )
+        },
+        loader = { DeviceSystemController.readConnectivitySnapshot(context) }
+    )
+    val storage = rememberAsyncResumableSnapshot(
+        initial = {
+            StorageAndMemorySnapshot(
+                totalStorageGb = 128f,
+                usedStorageGb = 32f,
+                freeStorageGb = 96f,
+                storageUsedFraction = 0.25f,
+                totalRamGb = 8f,
+                usedRamGb = 4f,
+                freeRamGb = 4f,
+                ramUsedFraction = 0.5f
+            )
+        },
+        loader = { DeviceSystemController.readStorageAndMemorySnapshot(context) }
+    )
+    val about = rememberAsyncResumableSnapshot(
+        key = targetRefreshRateHz,
+        initial = {
+            DeviceAboutSnapshot(
+                deviceName = android.os.Build.MODEL,
+                modelName = android.os.Build.MODEL,
+                manufacturer = android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() },
+                androidVersion = android.os.Build.VERSION.RELEASE,
+                apiLevel = android.os.Build.VERSION.SDK_INT,
+                securityPatch = android.os.Build.VERSION.SECURITY_PATCH.ifBlank { "Güncel" },
+                processorLabel = android.os.Build.HARDWARE,
+                cpuCores = Runtime.getRuntime().availableProcessors(),
+                resolutionLabel = "${targetRefreshRateHz} Hz",
+                uptimeLabel = "Aktif"
+            )
+        },
+        loader = { DeviceSystemController.readDeviceAboutSnapshot(context, targetRefreshRateHz) }
+    )
 
-    val q = searchQuery.trim().lowercase(trLocale)
+    val q = searchQuery.trim()
     fun matches(vararg terms: String): Boolean {
         if (q.isEmpty()) return true
-        return terms.any { it.lowercase(trLocale).contains(q) }
+        return terms.any { TurkishSearchNormalizer.containsMatch(it, q) }
     }
 
     LazyColumn(
@@ -889,7 +986,22 @@ private fun BatterySubPage(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val battery = remember { DeviceSystemController.readBatterySnapshot(context) }
+    val battery = rememberAsyncResumableSnapshot(
+        initial = {
+            BatterySnapshot(
+                levelPercent = 100,
+                isCharging = false,
+                sourceLabel = "Pil Kullanımda",
+                healthLabel = "İyi (%100 Normal)",
+                temperatureCelsius = 28.5f,
+                voltageVolts = 4.1f,
+                currentMilliAmps = 0,
+                technology = "Li-ion",
+                isPowerSaveMode = false
+            )
+        },
+        loader = { DeviceSystemController.readBatterySnapshot(context) }
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -993,10 +1105,44 @@ private fun DisplayBrightnessSubPage(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
     var snapshot by remember {
-        mutableStateOf(DeviceSystemController.readDisplaySnapshot(context, activity))
+        mutableStateOf(
+            DisplaySnapshot(
+                brightnessFraction = 0.65f,
+                isAutoBrightness = true,
+                isRotationLocked = false,
+                screenTimeoutMs = 60_000,
+                canWriteSystemSettings = true
+            )
+        )
     }
     var brightness by remember { mutableFloatStateOf(snapshot.brightnessFraction) }
+
+    LaunchedEffect(Unit) {
+        val loaded = withContext(Dispatchers.IO) {
+            DeviceSystemController.readDisplaySnapshot(context, activity)
+        }
+        snapshot = loaded
+        brightness = loaded.brightnessFraction
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                coroutineScope.launch {
+                    val loaded = withContext(Dispatchers.IO) {
+                        DeviceSystemController.readDisplaySnapshot(context, activity)
+                    }
+                    snapshot = loaded
+                    brightness = loaded.brightnessFraction
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1061,7 +1207,7 @@ private fun DisplayBrightnessSubPage(
                     }
                     HnmMinimalSlider(
                         value = brightness,
-                        valueRange = 0.03f..1f,
+                        valueRange = 0.02f..1f,
                         onValueChange = { next ->
                             brightness = next
                             DeviceSystemController.setBrightnessFraction(context, activity, next)
@@ -1146,12 +1292,39 @@ private fun SoundHapticsSubPage(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val initial = remember { DeviceSystemController.readAudioSnapshot(context) }
-    var ringerMode by remember { mutableIntStateOf(initial.ringerMode) }
-    var mediaVol by remember { mutableFloatStateOf(initial.mediaFraction) }
-    var ringVol by remember { mutableFloatStateOf(initial.ringFraction) }
-    var alarmVol by remember { mutableFloatStateOf(initial.alarmFraction) }
-    var callVol by remember { mutableFloatStateOf(initial.callFraction) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
+    var ringerMode by remember { mutableIntStateOf(AudioManager.RINGER_MODE_NORMAL) }
+    var mediaVol by remember { mutableFloatStateOf(0.5f) }
+    var ringVol by remember { mutableFloatStateOf(0.6f) }
+    var alarmVol by remember { mutableFloatStateOf(0.75f) }
+    var callVol by remember { mutableFloatStateOf(0.75f) }
+
+    LaunchedEffect(Unit) {
+        val snap = withContext(Dispatchers.IO) { DeviceSystemController.readAudioSnapshot(context) }
+        ringerMode = snap.ringerMode
+        mediaVol = snap.mediaFraction
+        ringVol = snap.ringFraction
+        alarmVol = snap.alarmFraction
+        callVol = snap.callFraction
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                coroutineScope.launch {
+                    val snap = withContext(Dispatchers.IO) { DeviceSystemController.readAudioSnapshot(context) }
+                    ringerMode = snap.ringerMode
+                    mediaVol = snap.mediaFraction
+                    ringVol = snap.ringFraction
+                    alarmVol = snap.alarmFraction
+                    callVol = snap.callFraction
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1179,8 +1352,13 @@ private fun SoundHapticsSubPage(
                             selected = ringerMode == mode,
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                DeviceSystemController.setRingerMode(context, mode)
-                                ringerMode = DeviceSystemController.readAudioSnapshot(context).ringerMode
+                                coroutineScope.launch {
+                                    val updatedMode = withContext(Dispatchers.IO) {
+                                        DeviceSystemController.setRingerMode(context, mode)
+                                        DeviceSystemController.readAudioSnapshot(context).ringerMode
+                                    }
+                                    ringerMode = updatedMode
+                                }
                             }
                         )
                     }
@@ -1240,7 +1418,21 @@ private fun StorageSubPage(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val storage = remember { DeviceSystemController.readStorageAndMemorySnapshot(context) }
+    val storage = rememberAsyncResumableSnapshot(
+        initial = {
+            StorageAndMemorySnapshot(
+                totalStorageGb = 128f,
+                usedStorageGb = 32f,
+                freeStorageGb = 96f,
+                storageUsedFraction = 0.25f,
+                totalRamGb = 8f,
+                usedRamGb = 4f,
+                freeRamGb = 4f,
+                ramUsedFraction = 0.5f
+            )
+        },
+        loader = { DeviceSystemController.readStorageAndMemorySnapshot(context) }
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1333,7 +1525,17 @@ private fun ConnectivitySubPage(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val snap = remember { DeviceSystemController.readConnectivitySnapshot(context) }
+    val snap = rememberAsyncResumableSnapshot(
+        initial = {
+            ConnectivitySnapshot(
+                isWifiConnected = true,
+                isCellularConnected = false,
+                isAirplaneMode = false,
+                isBluetoothEnabled = false
+            )
+        },
+        loader = { DeviceSystemController.readConnectivitySnapshot(context) }
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1387,15 +1589,20 @@ private fun AppsManagerSubPage(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val trLocale = remember { Locale("tr", "TR") }
     var filter by remember { mutableStateOf("") }
 
     val filtered = remember(allApps, filter) {
-        val q = filter.trim().lowercase(trLocale)
-        if (q.isEmpty()) allApps
-        else allApps.filter {
-            it.label.lowercase(trLocale).contains(q) ||
-                it.key.packageName.lowercase(trLocale).contains(q)
+        val q = filter.trim()
+        if (q.isEmpty()) {
+            allApps
+        } else {
+            allApps.filter { app ->
+                TurkishSearchNormalizer.containsMatch(app.label, q) ||
+                    TurkishSearchNormalizer.containsMatch(app.key.packageName, q)
+            }.sortedWith(
+                compareByDescending<AppItem> { TurkishSearchNormalizer.startsWithMatch(it.label, q) }
+                    .thenBy { TurkishSearchNormalizer.foldTurkishI(it.label) }
+            )
         }
     }
 
@@ -1460,8 +1667,39 @@ private fun GeneralAboutSubPage(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val about = remember { DeviceSystemController.readDeviceAboutSnapshot(context, targetRefreshRateHz) }
-    val mem = remember { DeviceSystemController.readStorageAndMemorySnapshot(context) }
+    val about = rememberAsyncResumableSnapshot(
+        key = targetRefreshRateHz,
+        initial = {
+            DeviceAboutSnapshot(
+                deviceName = android.os.Build.MODEL,
+                modelName = android.os.Build.MODEL,
+                manufacturer = android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() },
+                androidVersion = android.os.Build.VERSION.RELEASE,
+                apiLevel = android.os.Build.VERSION.SDK_INT,
+                securityPatch = android.os.Build.VERSION.SECURITY_PATCH.ifBlank { "Güncel" },
+                processorLabel = "Mobil İşlemci",
+                cpuCores = Runtime.getRuntime().availableProcessors(),
+                resolutionLabel = "${targetRefreshRateHz} Hz",
+                uptimeLabel = "Aktif"
+            )
+        },
+        loader = { DeviceSystemController.readDeviceAboutSnapshot(context, targetRefreshRateHz) }
+    )
+    val mem = rememberAsyncResumableSnapshot(
+        initial = {
+            StorageAndMemorySnapshot(
+                totalStorageGb = 128f,
+                usedStorageGb = 32f,
+                freeStorageGb = 96f,
+                storageUsedFraction = 0.25f,
+                totalRamGb = 8f,
+                usedRamGb = 4f,
+                freeRamGb = 4f,
+                ramUsedFraction = 0.5f
+            )
+        },
+        loader = { DeviceSystemController.readStorageAndMemorySnapshot(context) }
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1532,7 +1770,7 @@ private fun GeneralAboutSubPage(
                 SettingsDivider()
                 InfoKeyValueRow("Çalışma Süresi", about.uptimeLabel)
                 SettingsDivider()
-                InfoKeyValueRow("HNMUI Sürümü", "0.2.0-alpha")
+                InfoKeyValueRow("HNMUI Sürümü", BuildConfig.VERSION_NAME)
             }
         }
 
@@ -1768,8 +2006,10 @@ private fun HnmMinimalSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     onValueChange: (Float) -> Unit
 ) {
+    val safeVal = (if (value.isFinite()) value else valueRange.start)
+        .coerceIn(valueRange.start, valueRange.endInclusive)
     Slider(
-        value = value,
+        value = safeVal,
         onValueChange = onValueChange,
         valueRange = valueRange,
         colors = SliderDefaults.colors(

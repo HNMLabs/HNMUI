@@ -3,7 +3,7 @@
 ## 🇬🇧 English
 
 ### 1. Installing or Updating the APK
-1. Download the latest signed release APK (`HNMUI-v0.3.1-alpha.apk`) from **[Releases](https://github.com/HNMLabs/HNMUI/releases)**.
+1. Download the latest signed release APK (`HNMUI-v0.3.2-alpha.apk`) from **[Releases](https://github.com/HNMLabs/HNMUI/releases)**.
 2. Tap the downloaded APK to install. Because every release is signed with the same official `CN=HNMUI` certificate, **you can install updates directly on top of previous versions without uninstalling** (all your folders, Dock pins, and notes are preserved).
 
 ### 2. Locking HNMUI as Your Default Home Launcher
@@ -21,7 +21,7 @@ HNMUI adjusts window brightness immediately at 120 FPS without any special permi
 ## 🇹🇷 Türkçe
 
 ### 1. APK Kurulumu ve Güncelleme
-1. **[Sürümler (Releases)](https://github.com/HNMLabs/HNMUI/releases)** sayfasından en güncel `HNMUI-v0.3.1-alpha.apk` dosyasını indirin.
+1. **[Sürümler (Releases)](https://github.com/HNMLabs/HNMUI/releases)** sayfasından en güncel `HNMUI-v0.3.2-alpha.apk` dosyasını indirin.
 2. APK dosyasına dokunup yükleyin. Tüm resmi sürümler aynı `CN=HNMUI` anahtarıyla imzalandığı için **eski sürümü silmeden doğrudan üzerine kurup güncelleyebilirsiniz**; klasörleriniz, Dock diziliminiz ve notlarınız korunur.
 
 ### 2. Ana Ekran Tuşunu HNMUI'ye Kilitleme (Varsayılan Launcher)

@@ -2,10 +2,13 @@ package com.hnmlabs.hnmui.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.model.AppCategory
 import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
@@ -15,13 +18,16 @@ import com.hnmlabs.hnmui.model.LauncherCustomizationSettings
 import com.hnmlabs.hnmui.model.PersistedHomeState
 import com.hnmlabs.hnmui.model.QuickNoteItem
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.IOException
 import java.util.UUID
 
 private val Context.homeLayoutDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "hnmui_home_layout"
+    name = "hnmui_home_layout",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
 )
 
 /**
@@ -38,17 +44,27 @@ class HomeLayoutRepository(
 
     private val stateKey = stringPreferencesKey("persisted_home_state_v1")
 
-    val persistedState: Flow<PersistedHomeState?> = context.homeLayoutDataStore.data.map { prefs ->
-        val raw = prefs[stateKey] ?: return@map null
-        runCatching { json.decodeFromString<PersistedHomeState>(raw) }.getOrNull()
-    }
+    val persistedState: Flow<PersistedHomeState?> = context.homeLayoutDataStore.data
+        .catch { err ->
+            if (err is IOException) emit(emptyPreferences()) else throw err
+        }
+        .map { prefs ->
+            val raw = prefs[stateKey] ?: return@map null
+            runCatching { json.decodeFromString<PersistedHomeState>(raw) }.getOrNull()
+        }
 
-    suspend fun ensureInitialSeed(
+    /**
+     * İlk tohumlamayı (initial seed), HNM Ayarlar ikonu göçünü ve kaldırılmış (ghost)
+     * uygulamaların temizliğini tek bir atomik DataStore işleminde senkronize eder.
+     */
+    suspend fun syncWithInstalledApps(
         installedApps: List<AppItem>,
         maxPerPage: Int,
         dockMaxItems: Int
     ) {
         if (installedApps.isEmpty()) return
+        val installedIds = installedApps.mapTo(HashSet(installedApps.size)) { it.key.stableId }
+
         context.homeLayoutDataStore.edit { prefs ->
             val existing = prefs[stateKey]
                 ?.let { runCatching { json.decodeFromString<PersistedHomeState>(it) }.getOrNull() }
@@ -56,11 +72,14 @@ class HomeLayoutRepository(
             if (existing == null) {
                 val seeded = buildInitialSeedState(installedApps, maxPerPage, dockMaxItems)
                 prefs[stateKey] = json.encodeToString(seeded)
-            } else if (!existing.hasInjectedHnmSettingsTile) {
-                // Önceki sürümden güncellenen kullanıcının ana ekranına HNM Ayarlar ikonunu ekle
+                return@edit
+            }
+
+            var candidate = existing
+            if (!candidate.hasInjectedHnmSettingsTile) {
                 val settingsKey = InstalledAppsRepository.HNM_SETTINGS_KEY
-                val alreadyPresent = existing.dock.any { it.stableId == settingsKey.stableId } ||
-                    existing.pages.any { page ->
+                val alreadyPresent = candidate.dock.any { it.stableId == settingsKey.stableId } ||
+                    candidate.pages.any { page ->
                         page.items.any { item ->
                             when (item) {
                                 is HomeGridItem.AppTile -> item.key.stableId == settingsKey.stableId
@@ -71,9 +90,9 @@ class HomeLayoutRepository(
                     }
 
                 val updatedPages = if (alreadyPresent) {
-                    existing.pages
+                    candidate.pages
                 } else {
-                    val pages = existing.pages.toMutableList()
+                    val pages = candidate.pages.toMutableList()
                     val first = pages.firstOrNull()
                         ?: HomePageModel(id = "page_1", items = emptyList())
                     if (pages.isEmpty()) {
@@ -85,17 +104,24 @@ class HomeLayoutRepository(
                     }
                     rebalancePages(
                         pages = pages,
-                        maxPerPage = (existing.customization.gridColumns * existing.customization.gridRows)
+                        maxPerPage = (candidate.customization.gridColumns * candidate.customization.gridRows)
                             .coerceAtLeast(16)
                     )
                 }
 
-                prefs[stateKey] = json.encodeToString(
-                    existing.copy(
-                        pages = updatedPages,
-                        hasInjectedHnmSettingsTile = true
-                    )
+                candidate = candidate.copy(
+                    pages = updatedPages,
+                    hasInjectedHnmSettingsTile = true
                 )
+            }
+
+            val normalized = pruneUninstalledAndNormalize(
+                state = candidate,
+                installedIds = installedIds,
+                maxPerPage = maxPerPage
+            )
+            if (normalized != existing) {
+                prefs[stateKey] = json.encodeToString(normalized)
             }
         }
     }
@@ -164,30 +190,10 @@ class HomeLayoutRepository(
                 )
             } else {
                 if (state.dock.size >= maxDockItems.coerceIn(3, 7)) return@mutateState state
-                // Ana ekran sayfalarından çıkarıp Dock'a sabitle
-                val strippedPages = state.pages.map { page ->
-                    page.copy(
-                        items = page.items.mapNotNull { item ->
-                            when (item) {
-                                is HomeGridItem.AppTile ->
-                                    if (item.key.stableId == key.stableId) null else item
-                                is HomeGridItem.FolderTile -> {
-                                    val rem = item.apps.filterNot { it.stableId == key.stableId }
-                                    when (rem.size) {
-                                        0 -> null
-                                        1 -> HomeGridItem.AppTile(rem.first())
-                                        else -> item.copy(apps = rem)
-                                    }
-                                }
-                            }
-                        }
-                    )
-                }
+                val strippedPages = stripAppFromPages(state.pages, key.stableId)
                 state.copy(
                     dock = state.dock + key,
-                    pages = strippedPages.ifEmpty {
-                        listOf(HomePageModel(id = "page_1", items = emptyList()))
-                    }
+                    pages = pruneEmptyExtraPages(strippedPages)
                 )
             }
         }
@@ -214,8 +220,9 @@ class HomeLayoutRepository(
             }
             if (alreadyInDock || alreadyInPages) return@mutateState state
 
-            val pages = state.pages.toMutableList()
-            val targetIdx = pages.indexOfFirst { it.items.size < maxPerPage }
+            val safeMax = maxPerPage.coerceAtLeast(8)
+            val pages = normalizePages(state.pages, safeMax).toMutableList()
+            val targetIdx = pages.indexOfFirst { it.items.size < safeMax }
             if (targetIdx >= 0) {
                 val target = pages[targetIdx]
                 pages[targetIdx] = target.copy(items = target.items + HomeGridItem.AppTile(key))
@@ -231,24 +238,7 @@ class HomeLayoutRepository(
 
     suspend fun removeFromHomeScreen(key: AppComponentKey) {
         mutateState { state ->
-            val cleanedPages = state.pages.mapNotNull { page ->
-                val items = page.items.mapNotNull { item ->
-                    when (item) {
-                        is HomeGridItem.AppTile ->
-                            if (item.key.stableId == key.stableId) null else item
-                        is HomeGridItem.FolderTile -> {
-                            val remaining = item.apps.filterNot { it.stableId == key.stableId }
-                            when (remaining.size) {
-                                0 -> null
-                                1 -> HomeGridItem.AppTile(remaining.first())
-                                else -> item.copy(apps = remaining)
-                            }
-                        }
-                    }
-                }
-                if (items.isEmpty() && state.pages.size > 1) null else page.copy(items = items)
-            }.ifEmpty { listOf(HomePageModel(id = "page_main", items = emptyList())) }
-
+            val cleanedPages = pruneEmptyExtraPages(stripAppFromPages(state.pages, key.stableId))
             val cleanedDock = state.dock.filterNot { it.stableId == key.stableId }
             state.copy(dock = cleanedDock, pages = cleanedPages)
         }
@@ -260,19 +250,21 @@ class HomeLayoutRepository(
         folderTitle: String = "Klasör"
     ) {
         mutateState { state ->
-            val strippedPages = state.pages.map { page ->
-                page.copy(
-                    items = page.items.filterNot {
-                        it is HomeGridItem.AppTile && it.key.stableId == appKey.stableId
-                    }
-                )
-            }.toMutableList()
+            // Uygulamayı hem Dock'tan hem de mevcut sayfalardan/diğer klasörlerden çıkar ki kopyalanmasın
+            val nextDock = state.dock.filterNot { it.stableId == appKey.stableId }
+            val strippedPages = stripAppFromPages(
+                pages = state.pages,
+                appStableId = appKey.stableId,
+                preserveFolderId = targetFolderId
+            ).toMutableList()
 
             if (targetFolderId != null) {
+                var addedToTarget = false
                 val updatedPages = strippedPages.map { page ->
                     page.copy(
                         items = page.items.map { item ->
                             if (item is HomeGridItem.FolderTile && item.id == targetFolderId) {
+                                addedToTarget = true
                                 if (item.apps.any { it.stableId == appKey.stableId }) {
                                     item
                                 } else {
@@ -284,7 +276,11 @@ class HomeLayoutRepository(
                         }
                     )
                 }
-                state.copy(pages = updatedPages)
+                if (!addedToTarget) return@mutateState state
+                state.copy(
+                    dock = nextDock,
+                    pages = pruneEmptyExtraPages(updatedPages)
+                )
             } else {
                 val newFolder = HomeGridItem.FolderTile(
                     id = UUID.randomUUID().toString(),
@@ -300,7 +296,10 @@ class HomeLayoutRepository(
                 }
                 val maxPerPage = (state.customization.gridColumns * state.customization.gridRows)
                     .coerceAtLeast(16)
-                state.copy(pages = rebalancePages(strippedPages, maxPerPage))
+                state.copy(
+                    dock = nextDock,
+                    pages = rebalancePages(strippedPages, maxPerPage)
+                )
             }
         }
     }
@@ -418,20 +417,94 @@ class HomeLayoutRepository(
 
     companion object {
         sealed interface LayoutDragSource {
-            data class HomeSlot(val pageIndex: Int, val slotIndex: Int) : LayoutDragSource
-            data class DockSlot(val dockIndex: Int) : LayoutDragSource
+            data class HomeSlot(
+                val pageIndex: Int,
+                val slotIndex: Int,
+                val expectedItemId: String? = null
+            ) : LayoutDragSource
+
+            data class DockSlot(
+                val dockIndex: Int,
+                val expectedAppKey: AppComponentKey? = null
+            ) : LayoutDragSource
         }
 
         sealed interface LayoutDropDestination {
             data class HomeCell(val pageIndex: Int, val slotIndex: Int) : LayoutDropDestination
             data class MergeIntoFolder(val folderId: String) : LayoutDropDestination
+            data class CreateFolderWithApp(
+                val targetAppKey: AppComponentKey,
+                val folderTitle: String = "Klasör"
+            ) : LayoutDropDestination
             data class DockCell(val insertIndex: Int) : LayoutDropDestination
+        }
+
+        /**
+         * Sayfa listesini hem HomeLayoutRepository hem LauncherViewModel için birebir aynı
+         * taşma/budama kurallarıyla dengeler; böylece UI sayfa/slot indeksleri DataStore ile %100 eşleşir.
+         */
+        fun normalizePages(
+            pages: List<HomePageModel>,
+            maxPerPage: Int
+        ): List<HomePageModel> {
+            val safeMax = maxPerPage.coerceAtLeast(8)
+            val base = pages.ifEmpty { listOf(HomePageModel(id = "page_1", items = emptyList())) }
+            return spillOverflowPages(pruneEmptyExtraPages(base), safeMax)
+        }
+
+        /**
+         * Cihazdan silinmiş (ghost) uygulamaları Dock, sayfalar ve klasörlerden temizler;
+         * tek uygulamaya düşen klasörleri tekil ikona, boşalan klasörleri ise silinmişe dönüştürür.
+         */
+        fun pruneUninstalledAndNormalize(
+            state: PersistedHomeState,
+            installedIds: Set<String>,
+            maxPerPage: Int
+        ): PersistedHomeState {
+            if (installedIds.isEmpty()) return state
+            val safeMax = maxPerPage.coerceAtLeast(8)
+            val cleanDock = state.dock
+                .filter { it.stableId in installedIds }
+                .distinctBy { it.stableId }
+
+            val dockIdSet = cleanDock.mapTo(HashSet()) { it.stableId }
+            val seenAppIds = HashSet<String>(dockIdSet)
+
+            val cleanedPages = state.pages.map { page ->
+                page.copy(
+                    items = page.items.mapNotNull { item ->
+                        when (item) {
+                            is HomeGridItem.AppTile -> {
+                                val id = item.key.stableId
+                                if (id in installedIds && seenAppIds.add(id)) item else null
+                            }
+                            is HomeGridItem.FolderTile -> {
+                                val validApps = item.apps.filter { appKey ->
+                                    val id = appKey.stableId
+                                    id in installedIds && seenAppIds.add(id)
+                                }
+                                when (validApps.size) {
+                                    0 -> null
+                                    1 -> HomeGridItem.AppTile(validApps.first())
+                                    else -> item.copy(apps = validApps)
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+
+            return state.copy(
+                dock = cleanDock,
+                pages = normalizePages(cleanedPages, safeMax)
+            )
         }
 
         /**
          * Ana ekran ızgarası, klasörler ve alt Dock arasındaki tüm sürükle-bırak
          * geçişlerini (Dock'a ekleme, Dock doluysa takas etme, Dock'tan çıkarma,
-         * Dock içi sıralama ve sayfa içi/arası taşıma) atomik olarak uygular.
+         * başka uygulamanın üstüne bırakıp yeni klasör kurma, klasöre ekleme ve
+         * sayfa içi/arası taşıma) atomik ve kimlik-doğrulamalı olarak uygular.
          */
         fun applyDragDropToState(
             state: PersistedHomeState,
@@ -443,31 +516,29 @@ class HomeLayoutRepository(
             val safeMaxPerPage = maxPerPage.coerceAtLeast(8)
             val safeMaxDock = maxDockItems.coerceIn(3, 7)
 
-            val initialPages = spillOverflowPages(
-                pages = state.pages.ifEmpty {
-                    listOf(HomePageModel(id = "page_1", items = emptyList()))
-                },
-                maxPerPage = safeMaxPerPage
-            ).toMutableList()
+            val initialPages = normalizePages(state.pages, safeMaxPerPage).toMutableList()
             val dock = state.dock.toMutableList()
 
             when (source) {
                 is LayoutDragSource.HomeSlot -> {
-                    val fromPage = initialPages.getOrNull(source.pageIndex) ?: return state
-                    val movingItem = fromPage.items.getOrNull(source.slotIndex) ?: return state
+                    val located = locateHomeSlot(initialPages, source) ?: return state
+                    val actualPageIdx = located.first
+                    val actualSlotIdx = located.second
+                    val fromPage = initialPages[actualPageIdx]
+                    val movingItem = fromPage.items[actualSlotIdx]
 
                     when (destination) {
                         is LayoutDropDestination.HomeCell -> {
-                            if (source.pageIndex == destination.pageIndex) {
+                            if (actualPageIdx == destination.pageIndex) {
                                 val list = fromPage.items.toMutableList()
-                                list.removeAt(source.slotIndex)
+                                list.removeAt(actualSlotIdx)
                                 val insertIdx = destination.slotIndex.coerceIn(0, list.size)
                                 list.add(insertIdx, movingItem)
-                                initialPages[source.pageIndex] = fromPage.copy(items = list)
+                                initialPages[actualPageIdx] = fromPage.copy(items = list)
                             } else {
                                 val srcList = fromPage.items.toMutableList()
-                                srcList.removeAt(source.slotIndex)
-                                initialPages[source.pageIndex] = fromPage.copy(items = srcList)
+                                srcList.removeAt(actualSlotIdx)
+                                initialPages[actualPageIdx] = fromPage.copy(items = srcList)
 
                                 while (initialPages.size <= destination.pageIndex) {
                                     initialPages += HomePageModel(
@@ -481,7 +552,7 @@ class HomeLayoutRepository(
                                 initialPages[destination.pageIndex] = dstPage.copy(items = dstList)
                             }
                             return state.copy(
-                                pages = spillOverflowPages(pruneEmptyExtraPages(initialPages), safeMaxPerPage)
+                                pages = normalizePages(initialPages, safeMaxPerPage)
                             )
                         }
 
@@ -493,8 +564,8 @@ class HomeLayoutRepository(
                             if (!folderExists) return state
 
                             val srcList = fromPage.items.toMutableList()
-                            srcList.removeAt(source.slotIndex)
-                            initialPages[source.pageIndex] = fromPage.copy(items = srcList)
+                            srcList.removeAt(actualSlotIdx)
+                            initialPages[actualPageIdx] = fromPage.copy(items = srcList)
 
                             val mergedPages = initialPages.map { page ->
                                 page.copy(
@@ -511,7 +582,43 @@ class HomeLayoutRepository(
                                     }
                                 )
                             }
-                            return state.copy(pages = pruneEmptyExtraPages(mergedPages))
+                            return state.copy(pages = normalizePages(mergedPages, safeMaxPerPage))
+                        }
+
+                        is LayoutDropDestination.CreateFolderWithApp -> {
+                            val appTile = movingItem as? HomeGridItem.AppTile ?: return state
+                            if (appTile.key.stableId == destination.targetAppKey.stableId) return state
+                            val targetExists = initialPages.any { p ->
+                                p.items.any {
+                                    it is HomeGridItem.AppTile &&
+                                        it.key.stableId == destination.targetAppKey.stableId
+                                }
+                            }
+                            if (!targetExists) return state
+
+                            val srcList = fromPage.items.toMutableList()
+                            srcList.removeAt(actualSlotIdx)
+                            initialPages[actualPageIdx] = fromPage.copy(items = srcList)
+
+                            val newFolder = HomeGridItem.FolderTile(
+                                id = UUID.randomUUID().toString(),
+                                title = destination.folderTitle.trim().ifEmpty { "Klasör" },
+                                apps = listOf(destination.targetAppKey, appTile.key)
+                            )
+                            val updatedPages = initialPages.map { page ->
+                                page.copy(
+                                    items = page.items.map { item ->
+                                        if (item is HomeGridItem.AppTile &&
+                                            item.key.stableId == destination.targetAppKey.stableId
+                                        ) {
+                                            newFolder
+                                        } else {
+                                            item
+                                        }
+                                    }
+                                )
+                            }
+                            return state.copy(pages = normalizePages(updatedPages, safeMaxPerPage))
                         }
 
                         is LayoutDropDestination.DockCell -> {
@@ -519,7 +626,7 @@ class HomeLayoutRepository(
                             if (dock.any { it.stableId == appTile.key.stableId }) return state
 
                             val srcList = fromPage.items.toMutableList()
-                            srcList.removeAt(source.slotIndex)
+                            srcList.removeAt(actualSlotIdx)
 
                             if (dock.size < safeMaxDock) {
                                 dock.add(destination.insertIndex.coerceIn(0, dock.size), appTile.key)
@@ -527,29 +634,30 @@ class HomeLayoutRepository(
                                 val swapIdx = destination.insertIndex.coerceIn(0, dock.lastIndex)
                                 val displacedKey = dock[swapIdx]
                                 dock[swapIdx] = appTile.key
-                                srcList.add(source.slotIndex.coerceIn(0, srcList.size), HomeGridItem.AppTile(displacedKey))
+                                srcList.add(actualSlotIdx.coerceIn(0, srcList.size), HomeGridItem.AppTile(displacedKey))
                             }
-                            initialPages[source.pageIndex] = fromPage.copy(items = srcList)
+                            initialPages[actualPageIdx] = fromPage.copy(items = srcList)
                             return state.copy(
                                 dock = dock,
-                                pages = spillOverflowPages(pruneEmptyExtraPages(initialPages), safeMaxPerPage)
+                                pages = normalizePages(initialPages, safeMaxPerPage)
                             )
                         }
                     }
                 }
 
                 is LayoutDragSource.DockSlot -> {
-                    val movingAppKey = dock.getOrNull(source.dockIndex) ?: return state
+                    val actualDockIdx = locateDockSlot(dock, source) ?: return state
+                    val movingAppKey = dock[actualDockIdx]
 
                     when (destination) {
                         is LayoutDropDestination.DockCell -> {
-                            dock.removeAt(source.dockIndex)
+                            dock.removeAt(actualDockIdx)
                             dock.add(destination.insertIndex.coerceIn(0, dock.size), movingAppKey)
                             return state.copy(dock = dock)
                         }
 
                         is LayoutDropDestination.HomeCell -> {
-                            dock.removeAt(source.dockIndex)
+                            dock.removeAt(actualDockIdx)
                             while (initialPages.size <= destination.pageIndex) {
                                 initialPages += HomePageModel(
                                     id = "page_${UUID.randomUUID()}",
@@ -567,7 +675,7 @@ class HomeLayoutRepository(
                             initialPages[destination.pageIndex] = dstPage.copy(items = dstList)
                             return state.copy(
                                 dock = dock,
-                                pages = spillOverflowPages(pruneEmptyExtraPages(initialPages), safeMaxPerPage)
+                                pages = normalizePages(initialPages, safeMaxPerPage)
                             )
                         }
 
@@ -577,7 +685,7 @@ class HomeLayoutRepository(
                             }
                             if (!folderExists) return state
 
-                            dock.removeAt(source.dockIndex)
+                            dock.removeAt(actualDockIdx)
                             val mergedPages = initialPages.map { page ->
                                 page.copy(
                                     items = page.items.map { item ->
@@ -595,11 +703,110 @@ class HomeLayoutRepository(
                             }
                             return state.copy(
                                 dock = dock,
-                                pages = pruneEmptyExtraPages(mergedPages)
+                                pages = normalizePages(mergedPages, safeMaxPerPage)
+                            )
+                        }
+
+                        is LayoutDropDestination.CreateFolderWithApp -> {
+                            if (movingAppKey.stableId == destination.targetAppKey.stableId) return state
+                            val targetExists = initialPages.any { p ->
+                                p.items.any {
+                                    it is HomeGridItem.AppTile &&
+                                        it.key.stableId == destination.targetAppKey.stableId
+                                }
+                            }
+                            if (!targetExists) return state
+
+                            dock.removeAt(actualDockIdx)
+                            val newFolder = HomeGridItem.FolderTile(
+                                id = UUID.randomUUID().toString(),
+                                title = destination.folderTitle.trim().ifEmpty { "Klasör" },
+                                apps = listOf(destination.targetAppKey, movingAppKey)
+                            )
+                            val updatedPages = initialPages.map { page ->
+                                page.copy(
+                                    items = page.items.map { item ->
+                                        if (item is HomeGridItem.AppTile &&
+                                            item.key.stableId == destination.targetAppKey.stableId
+                                        ) {
+                                            newFolder
+                                        } else {
+                                            item
+                                        }
+                                    }
+                                )
+                            }
+                            return state.copy(
+                                dock = dock,
+                                pages = normalizePages(updatedPages, safeMaxPerPage)
                             )
                         }
                     }
                 }
+            }
+        }
+
+        private fun locateHomeSlot(
+            pages: List<HomePageModel>,
+            source: LayoutDragSource.HomeSlot
+        ): Pair<Int, Int>? {
+            val expectedId = source.expectedItemId
+            val directItem = pages.getOrNull(source.pageIndex)?.items?.getOrNull(source.slotIndex)
+            if (expectedId == null) {
+                return if (directItem != null) source.pageIndex to source.slotIndex else null
+            }
+            if (directItem?.itemId == expectedId) {
+                return source.pageIndex to source.slotIndex
+            }
+            for ((pIdx, page) in pages.withIndex()) {
+                val sIdx = page.items.indexOfFirst { it.itemId == expectedId }
+                if (sIdx >= 0) return pIdx to sIdx
+            }
+            return null
+        }
+
+        private fun locateDockSlot(
+            dock: List<AppComponentKey>,
+            source: LayoutDragSource.DockSlot
+        ): Int? {
+            val expected = source.expectedAppKey
+            val direct = dock.getOrNull(source.dockIndex)
+            if (expected == null) {
+                return if (direct != null) source.dockIndex else null
+            }
+            if (direct?.stableId == expected.stableId) {
+                return source.dockIndex
+            }
+            val found = dock.indexOfFirst { it.stableId == expected.stableId }
+            return if (found >= 0) found else null
+        }
+
+        private fun stripAppFromPages(
+            pages: List<HomePageModel>,
+            appStableId: String,
+            preserveFolderId: String? = null
+        ): List<HomePageModel> {
+            return pages.map { page ->
+                page.copy(
+                    items = page.items.mapNotNull { item ->
+                        when (item) {
+                            is HomeGridItem.AppTile ->
+                                if (item.key.stableId == appStableId) null else item
+                            is HomeGridItem.FolderTile -> {
+                                if (preserveFolderId != null && item.id == preserveFolderId) {
+                                    item
+                                } else {
+                                    val rem = item.apps.filterNot { it.stableId == appStableId }
+                                    when (rem.size) {
+                                        0 -> null
+                                        1 -> HomeGridItem.AppTile(rem.first())
+                                        else -> item.copy(apps = rem)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                )
             }
         }
 
@@ -665,8 +872,8 @@ class HomeLayoutRepository(
                     app.key.stableId != InstalledAppsRepository.HNM_SETTINGS_KEY.stableId &&
                         app !in dockCandidates &&
                         keywords.any { kw ->
-                            app.key.packageName.lowercase().contains(kw) ||
-                                app.label.lowercase().contains(kw)
+                            TurkishSearchNormalizer.foldAscii(app.key.packageName).contains(kw) ||
+                                TurkishSearchNormalizer.foldAscii(app.label).contains(kw)
                         }
                 }
                 if (match != null && dockCandidates.size < dockMaxItems) {
@@ -676,7 +883,7 @@ class HomeLayoutRepository(
 
             pickDockCandidate(listOf("dialer", "phone", "telefon"))
             pickDockCandidate(listOf("messages", "messaging", "mms", "whatsapp", "mesaj"))
-            pickDockCandidate(listOf("chrome", "browser", "safari", "firefox", "tarayıcı"))
+            pickDockCandidate(listOf("chrome", "browser", "safari", "firefox", "tarayici"))
             pickDockCandidate(listOf("camera", "kamera"))
 
             for (app in installedApps) {

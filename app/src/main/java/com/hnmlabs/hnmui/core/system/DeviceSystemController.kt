@@ -16,12 +16,17 @@ import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.StatFs
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
 import androidx.compose.runtime.Immutable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.roundToInt
 
 @Immutable
@@ -95,6 +100,63 @@ data class DeviceAboutSnapshot(
  * pil, parlaklık, ekran süresi, ses, depolama, RAM, el feneri ve ağ durumunu yöneten köprü.
  */
 object DeviceSystemController {
+
+    private val _isTorchEnabled = MutableStateFlow(false)
+    val isTorchEnabled: StateFlow<Boolean> = _isTorchEnabled.asStateFlow()
+
+    @Volatile
+    private var torchCallbackRegistered = false
+
+    @Volatile
+    private var cachedTorchCameraId: String? = null
+
+    fun ensureTorchObserver(context: Context) {
+        if (torchCallbackRegistered) return
+        synchronized(this) {
+            if (torchCallbackRegistered) return
+            val appCtx = context.applicationContext
+            val cameraManager = runCatching {
+                appCtx.getSystemService(CameraManager::class.java)
+            }.getOrNull() ?: return
+            val targetId = resolveTorchCameraId(cameraManager)
+            runCatching {
+                cameraManager.registerTorchCallback(
+                    object : CameraManager.TorchCallback() {
+                        override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
+                            if (targetId == null || cameraId == targetId) {
+                                _isTorchEnabled.value = enabled
+                            }
+                        }
+
+                        override fun onTorchModeUnavailable(cameraId: String) {
+                            if (targetId == null || cameraId == targetId) {
+                                _isTorchEnabled.value = false
+                            }
+                        }
+                    },
+                    Handler(Looper.getMainLooper())
+                )
+                torchCallbackRegistered = true
+            }
+        }
+    }
+
+    private fun resolveTorchCameraId(cameraManager: CameraManager): String? {
+        cachedTorchCameraId?.let { return it }
+        val resolved = runCatching {
+            cameraManager.cameraIdList.firstOrNull { id ->
+                val chars = cameraManager.getCameraCharacteristics(id)
+                val hasFlash = chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                val lensFacing = chars.get(CameraCharacteristics.LENS_FACING)
+                hasFlash && (lensFacing == null || lensFacing == CameraCharacteristics.LENS_FACING_BACK)
+            } ?: cameraManager.cameraIdList.firstOrNull { id ->
+                cameraManager.getCameraCharacteristics(id)
+                    .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            }
+        }.getOrNull()
+        cachedTorchCameraId = resolved
+        return resolved
+    }
 
     fun readBatterySnapshot(context: Context): BatterySnapshot {
         val bm = context.getSystemService(BatteryManager::class.java)
@@ -175,7 +237,7 @@ object DeviceSystemController {
         }.getOrDefault(140).coerceIn(1, 255)
 
         val fraction = if (windowBrightness in 0.01f..1.0f && !canWrite) {
-            windowBrightness
+            windowBrightness.coerceIn(0.02f, 1f)
         } else {
             (sysBrightnessInt / 255f).coerceIn(0.02f, 1f)
         }
@@ -204,7 +266,7 @@ object DeviceSystemController {
 
     fun setBrightnessFraction(context: Context, activity: Activity?, fraction: Float) {
         if (!fraction.isFinite()) return
-        val clamped = fraction.coerceIn(0.03f, 1f)
+        val clamped = fraction.coerceIn(0.02f, 1f)
         // Pencere parlaklığını izin beklemeden anında 120 FPS tepkiyle güncelle
         runCatching {
             activity?.window?.let { win ->
@@ -386,19 +448,12 @@ object DeviceSystemController {
     }
 
     fun toggleFlashlight(context: Context, enable: Boolean): Boolean {
+        ensureTorchObserver(context)
         val cameraManager = context.getSystemService(CameraManager::class.java) ?: return false
         return runCatching {
-            val torchCameraId = cameraManager.cameraIdList.firstOrNull { id ->
-                val chars = cameraManager.getCameraCharacteristics(id)
-                val hasFlash = chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-                val lensFacing = chars.get(CameraCharacteristics.LENS_FACING)
-                hasFlash && (lensFacing == null || lensFacing == CameraCharacteristics.LENS_FACING_BACK)
-            } ?: cameraManager.cameraIdList.firstOrNull { id ->
-                cameraManager.getCameraCharacteristics(id)
-                    .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-            } ?: return false
-
+            val torchCameraId = resolveTorchCameraId(cameraManager) ?: return false
             cameraManager.setTorchMode(torchCameraId, enable)
+            _isTorchEnabled.value = enable
             true
         }.getOrDefault(false)
     }

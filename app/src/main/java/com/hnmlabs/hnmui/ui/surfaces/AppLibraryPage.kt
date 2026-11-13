@@ -1,6 +1,8 @@
 package com.hnmlabs.hnmui.ui.surfaces
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -38,9 +39,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.AppLibraryGroup
@@ -51,13 +55,13 @@ import com.hnmlabs.hnmui.ui.components.MiniAppIconPreview
 import com.hnmlabs.hnmui.ui.components.SquircleShape
 import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
-import java.util.Locale
 
 /**
  * En sağ sayfa (Sayfa N+1): Otomatik kategorilenen Uygulama Arşivi (App Library).
  * iOS ergonomisine sadık olarak kategori kutularında ilk 3 ikonu doğrudan başlatır,
  * sağ alt 2x2 mini kümesine dokunulduğunda tüm kategoriyi açar.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AppLibraryPage(
     groups: List<AppLibraryGroup>,
@@ -69,7 +73,7 @@ fun AppLibraryPage(
     onExpandCategory: (AppLibraryGroup) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val trLocale = remember { Locale("tr", "TR") }
+    val haptics = LocalHapticFeedback.current
     var filterQuery by remember { mutableStateOf("") }
 
     Column(
@@ -128,13 +132,16 @@ fun AppLibraryPage(
         Spacer(modifier = Modifier.height(16.dp))
 
         if (filterQuery.isNotBlank()) {
-            // Alfabetik filtrelenmiş A-Z görünümü
-            val q = filterQuery.trim().lowercase(trLocale)
+            // Alfabetik filtrelenmiş A-Z görünümü (Türkçe I/İ/ı/i duyarlı)
+            val q = filterQuery.trim()
             val filtered = remember(allApps, q) {
-                allApps.filter {
-                    it.label.lowercase(trLocale).contains(q) ||
-                        it.key.packageName.lowercase().contains(q)
-                }
+                allApps.filter { app ->
+                    TurkishSearchNormalizer.containsMatch(app.label, q) ||
+                        TurkishSearchNormalizer.containsMatch(app.key.packageName, q)
+                }.sortedWith(
+                    compareByDescending<AppItem> { TurkishSearchNormalizer.startsWithMatch(it.label, q) }
+                        .thenBy { TurkishSearchNormalizer.foldTurkishI(it.label) }
+                )
             }
 
             LazyColumn(
@@ -146,7 +153,13 @@ fun AppLibraryPage(
                     GlassSurface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onLaunchApp(app) },
+                            .combinedClickable(
+                                onClick = { onLaunchApp(app) },
+                                onLongClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onAppLongPress(app)
+                                }
+                            ),
                         shape = RoundedCornerShape(18.dp),
                         tone = GlassTone.CARD
                     ) {

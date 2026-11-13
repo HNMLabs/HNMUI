@@ -14,8 +14,8 @@ Active security and stability patches are provided for the latest minor release 
 
 | Version | Supported | Notes |
 | :--- | :---: | :--- |
-| **`0.3.x`** (`v0.3.1-alpha`+) | ✅ | Current supported release branch |
-| `0.2.x` | ❌ | Upgrade to `v0.3.1-alpha` or newer |
+| **`0.3.x`** (`v0.3.2-alpha`+) | ✅ | Current supported release branch |
+| `0.2.x` | ❌ | Upgrade to `v0.3.2-alpha` or newer |
 | `0.1.x` | ❌ | Early alpha — deprecated |
 
 ### 2. Zero-Network / Offline-by-Design Guarantee
@@ -43,7 +43,7 @@ The default `sideload` release APK requests **only** low-risk, transparent Andro
 Every official HNMUI release APK is signed with the **HNMLabs Release Key**. You can verify an APK before installing using `apksigner` or `keytool`:
 
 ```bash
-keytool -printcert -jarfile HNMUI-v0.3.1-alpha.apk
+keytool -printcert -jarfile HNMUI-v0.3.2-alpha.apk
 ```
 
 Expected certificate identity:
@@ -72,8 +72,8 @@ Güvenlik ve kararlılık güncellemeleri en güncel sürüm serisi üzerinden s
 
 | Sürüm | Destek Durumu | Açıklama |
 | :--- | :---: | :--- |
-| **`0.3.x`** (`v0.3.1-alpha`+) | ✅ | Aktif olarak desteklenen güncel sürüm |
-| `0.2.x` | ❌ | Lütfen `v0.3.1-alpha` veya üstüne güncelleyin |
+| **`0.3.x`** (`v0.3.2-alpha`+) | ✅ | Aktif olarak desteklenen güncel sürüm |
+| `0.2.x` | ❌ | Lütfen `v0.3.2-alpha` veya üstüne güncelleyin |
 | `0.1.x` | ❌ | İlk alfa sürümleri — kullanım dışı |
 
 ### 2. Sıfır İnternet İzni & %100 Çevrimdışı Tasarım
@@ -101,7 +101,7 @@ Varsayılan `sideload` APK'sı **Google Play Protect** uyumludur ve hiçbir yük
 Resmi HNMUI sürümlerinin bütünlüğünü kurulum öncesinde aşağıdaki komutla doğrulayabilirsiniz:
 
 ```bash
-keytool -printcert -jarfile HNMUI-v0.3.1-alpha.apk
+keytool -printcert -jarfile HNMUI-v0.3.2-alpha.apk
 ```
 
 Beklenen resmi sertifika bilgileri:

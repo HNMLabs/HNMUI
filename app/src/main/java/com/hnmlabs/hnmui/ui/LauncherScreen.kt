@@ -30,6 +30,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -44,6 +45,7 @@ import com.hnmlabs.hnmui.core.system.DefaultLauncherHelper
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
 import com.hnmlabs.hnmui.data.InstalledAppsRepository
 import com.hnmlabs.hnmui.model.ResolvedHomeItem
+import com.hnmlabs.hnmui.model.ResolvedHomePage
 import com.hnmlabs.hnmui.ui.components.HnmIosStatusBar
 import com.hnmlabs.hnmui.ui.components.LocalGlassOpacityFactor
 import com.hnmlabs.hnmui.ui.components.LocalHnmTopBarHeight
@@ -83,7 +85,16 @@ fun LauncherScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val density = LocalDensity.current
-    val haptics = LocalHapticFeedback.current
+    val rawHaptics = LocalHapticFeedback.current
+    val haptics = remember(rawHaptics, state.customization.hapticFeedbackEnabled) {
+        object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+                if (state.customization.hapticFeedbackEnabled) {
+                    rawHaptics.performHapticFeedback(hapticFeedbackType)
+                }
+            }
+        }
+    }
     val coroutineScope = rememberCoroutineScope()
     val dragController = rememberLauncherDragDropController()
 
@@ -96,6 +107,10 @@ fun LauncherScreen(
         initialPage = primaryHomeIndex,
         pageCount = { totalPages }
     )
+
+    LaunchedEffect(homePageCount) {
+        dragController.prunePageBounds(homePageCount)
+    }
 
     // Fiziksel/jest Home tuşu sinyali geldiğinde tüm panelleri kapatıp ana sayfaya yay animasyonuyla dön
     LaunchedEffect(viewModel) {
@@ -212,12 +227,13 @@ fun LauncherScreen(
             dockAppsCount = state.dockApps.size,
             gridSpec = state.gridSpec
         )
-        if (nextTarget != null && nextTarget != prevTarget && state.customization.hapticFeedbackEnabled) {
+        if (nextTarget != null && nextTarget != prevTarget) {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
     }
 
     CompositionLocalProvider(
+        LocalHapticFeedback provides haptics,
         LocalGlassOpacityFactor provides state.gridSpec.glassOpacityFactor,
         LocalHnmTopBarHeight provides if (state.customization.useIosStatusBar) 38.dp else 0.dp
     ) {
@@ -400,8 +416,10 @@ fun LauncherScreen(
                             }
 
                             else -> {
-                                val homeIdx = (pageIndex - 1).coerceIn(0, state.homePages.lastIndex)
-                                val homePage = state.homePages[homeIdx]
+                                val safeLastIdx = (state.homePages.size - 1).coerceAtLeast(0)
+                                val homeIdx = (pageIndex - 1).coerceIn(0, safeLastIdx)
+                                val homePage = state.homePages.getOrNull(homeIdx)
+                                    ?: ResolvedHomePage(id = "page_empty", items = emptyList())
                                 HomeGridPage(
                                     homePageIndex = homeIdx,
                                     page = homePage,
