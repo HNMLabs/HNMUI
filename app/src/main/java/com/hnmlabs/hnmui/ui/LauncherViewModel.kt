@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.hnmlabs.hnmui.core.formfactor.FormFactorPolicy
 import com.hnmlabs.hnmui.core.formfactor.LauncherFeatureFlags
 import com.hnmlabs.hnmui.core.formfactor.LauncherGridSpec
+import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.data.AppCategoryClassifier
 import com.hnmlabs.hnmui.data.HomeLayoutRepository
 import com.hnmlabs.hnmui.data.InstalledAppsRepository
@@ -28,11 +29,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.Locale
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class ActiveFolderModal(
     val folderId: String?,
@@ -100,14 +104,44 @@ class LauncherViewModel(
     private val featureFlags: LauncherFeatureFlags
 ) : ViewModel() {
 
-    private val trLocale = Locale("tr", "TR")
     private val overlayState = MutableStateFlow(LauncherOverlayState())
+    private val syncMutex = Mutex()
 
     private val _scrollToPrimaryHomeSignal = Channel<Unit>(Channel.CONFLATED)
     val scrollToPrimaryHomeSignal = _scrollToPrimaryHomeSignal.receiveAsFlow()
 
     private val defaultCustomization = LauncherCustomizationSettings()
     private val defaultGridSpec = FormFactorPolicy.resolve(392, featureFlags, defaultCustomization)
+
+    init {
+        viewModelScope.launch {
+            combine(
+                appsRepository.apps,
+                layoutRepository.persistedState,
+                overlayState.map { it.smallestScreenWidthDp }.distinctUntilChanged()
+            ) { apps, persisted, swDp ->
+                Triple(apps, persisted, swDp)
+            }
+                .distinctUntilChanged()
+                .collect { (apps, persisted, swDp) ->
+                    if (apps.isNotEmpty()) {
+                        syncMutex.withLock {
+                            val activeCustom = persisted?.customization ?: defaultCustomization
+                            val spec = FormFactorPolicy.resolve(
+                                smallestScreenWidthDp = swDp,
+                                flags = featureFlags,
+                                customization = activeCustom
+                            )
+                            layoutRepository.syncWithInstalledApps(
+                                installedApps = apps,
+                                maxPerPage = spec.maxItemsPerPage,
+                                dockMaxItems = spec.dockMaxItems
+                            )
+                        }
+                    }
+                }
+        }
+    }
 
     val uiState: StateFlow<LauncherUiState> = combine(
         appsRepository.apps,
@@ -127,28 +161,33 @@ class LauncherViewModel(
             app.copy(badgeCount = badges[app.key.packageName] ?: 0)
         }
         val appById = badgedApps.associateBy { it.key.stableId }
+        val safeMaxPerPage = gridSpec.maxItemsPerPage.coerceAtLeast(8)
 
-        val effectivePersisted = persisted ?: HomeLayoutRepository.buildInitialSeedState(
+        val rawEffectivePersisted = persisted ?: HomeLayoutRepository.buildInitialSeedState(
             installedApps = badgedApps,
-            maxPerPage = gridSpec.maxItemsPerPage,
+            maxPerPage = safeMaxPerPage,
             dockMaxItems = gridSpec.dockMaxItems
         )
 
-        if (badgedApps.isNotEmpty() && (persisted == null || !persisted.hasInjectedHnmSettingsTile)) {
-            viewModelScope.launch {
-                layoutRepository.ensureInitialSeed(
-                    installedApps = badgedApps,
-                    maxPerPage = gridSpec.maxItemsPerPage,
-                    dockMaxItems = gridSpec.dockMaxItems
+        val effectivePersisted = if (appById.isNotEmpty()) {
+            HomeLayoutRepository.pruneUninstalledAndNormalize(
+                state = rawEffectivePersisted,
+                installedIds = appById.keys,
+                maxPerPage = safeMaxPerPage
+            )
+        } else {
+            rawEffectivePersisted.copy(
+                pages = HomeLayoutRepository.normalizePages(
+                    rawEffectivePersisted.pages,
+                    safeMaxPerPage
                 )
-            }
+            )
         }
 
         val dockApps = effectivePersisted.dock.mapNotNull { appById[it.stableId] }
         val resolvedFolders = ArrayList<ResolvedHomeItem.Folder>()
 
-        val safeMaxPerPage = gridSpec.maxItemsPerPage.coerceAtLeast(16)
-        val resolvedPages = effectivePersisted.pages.flatMap { page ->
+        val resolvedPages = effectivePersisted.pages.map { page ->
             val items = page.items.mapNotNull { gridItem ->
                 when (gridItem) {
                     is HomeGridItem.AppTile -> {
@@ -169,14 +208,7 @@ class LauncherViewModel(
                     }
                 }
             }
-            if (items.isEmpty()) {
-                listOf(ResolvedHomePage(id = page.id, items = emptyList()))
-            } else {
-                items.chunked(safeMaxPerPage).mapIndexed { idx, chunk ->
-                    val pageId = if (idx == 0) page.id else "${page.id}_$idx"
-                    ResolvedHomePage(id = pageId, items = chunk)
-                }
-            }
+            ResolvedHomePage(id = page.id, items = items)
         }.ifEmpty { listOf(ResolvedHomePage(id = "page_1", items = emptyList())) }
 
         val libraryGroups = AppCategoryClassifier.buildAppLibraryGroups(
@@ -190,18 +222,20 @@ class LauncherViewModel(
             ?.take(4)
             ?: badgedApps.take(4)
 
-        val queryTrimmed = overlays.spotlightQuery.trim().lowercase(trLocale)
+        val queryTrimmed = overlays.spotlightQuery.trim()
         val spotlightMatches = if (queryTrimmed.isEmpty()) {
             emptyList()
         } else {
             badgedApps
-                .filter {
-                    it.label.lowercase(trLocale).contains(queryTrimmed) ||
-                        it.key.packageName.lowercase(trLocale).contains(queryTrimmed)
+                .filter { app ->
+                    TurkishSearchNormalizer.containsMatch(app.label, queryTrimmed) ||
+                        TurkishSearchNormalizer.containsMatch(app.key.packageName, queryTrimmed)
                 }
-                .sortedByDescending {
-                    it.label.lowercase(trLocale).startsWith(queryTrimmed)
-                }
+                .sortedWith(
+                    compareByDescending<AppItem> {
+                        TurkishSearchNormalizer.startsWithMatch(it.label, queryTrimmed)
+                    }.thenBy { TurkishSearchNormalizer.foldTurkishI(it.label) }
+                )
         }
 
         val syncedFolderModal = overlays.openFolderModal?.let { modal ->
@@ -435,10 +469,12 @@ class LauncherViewModel(
         val repoSource = when (origin) {
             is DragOrigin.HomeSlot -> HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(
                 pageIndex = origin.pageIndex,
-                slotIndex = origin.slotIndex
+                slotIndex = origin.slotIndex,
+                expectedItemId = origin.item.itemId
             )
             is DragOrigin.DockSlot -> HomeLayoutRepository.Companion.LayoutDragSource.DockSlot(
-                dockIndex = origin.dockIndex
+                dockIndex = origin.dockIndex,
+                expectedAppKey = origin.app.key
             )
         }
 
@@ -451,6 +487,11 @@ class LauncherViewModel(
             is HoverDropTarget.MergeIntoFolder ->
                 HomeLayoutRepository.Companion.LayoutDropDestination.MergeIntoFolder(
                     folderId = resolvedTarget.folderId
+                )
+            is HoverDropTarget.CreateFolderWithApp ->
+                HomeLayoutRepository.Companion.LayoutDropDestination.CreateFolderWithApp(
+                    targetAppKey = resolvedTarget.targetApp.key,
+                    folderTitle = resolvedTarget.targetApp.category.titleTr
                 )
             is HoverDropTarget.DockCell ->
                 HomeLayoutRepository.Companion.LayoutDropDestination.DockCell(

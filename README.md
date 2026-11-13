@@ -5,13 +5,13 @@
 **iOS Simplicity Meets Android Freedom — Frosted-Glass 120 FPS Home Launcher**  
 **iOS Sadeliği, Android Özgürlüğüyle Buluştu — Buzlu Cam Dokulu 120 FPS Ana Ekran**
 
-[![Latest Release](https://img.shields.io/badge/release-v0.3.1--alpha-0A84FF?style=for-the-badge)](https://github.com/HNMLabs/HNMUI/releases/tag/v0.3.1-alpha)
+[![Latest Release](https://img.shields.io/badge/release-v0.3.2--alpha-0A84FF?style=for-the-badge)](https://github.com/HNMLabs/HNMUI/releases/tag/v0.3.2-alpha)
 [![CI & Secret Audit](https://img.shields.io/github/actions/workflow/status/HNMLabs/HNMUI/android-ci.yml?branch=main&style=for-the-badge&label=CI%20%26%20Security)](https://github.com/HNMLabs/HNMUI/actions/workflows/android-ci.yml)
 [![Android](https://img.shields.io/badge/Android-9.0%2B%20(API%2028--35)-30D158?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Offline First](https://img.shields.io/badge/Privacy-Zero%20Internet-10B981?style=for-the-badge)](SECURITY.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
-[**🇬🇧 English**](#english) · [**🇹🇷 Türkçe**](#türkçe) · [**📄 `README.tr.md`**](README.tr.md) · [**📚 Wiki**](docs/wiki/Home.md) · [**🔒 Security**](SECURITY.md) · [**📋 Changelog**](CHANGELOG.md) · [**🤝 Contributing**](CONTRIBUTING.md) · [**⬇️ APK (`v0.3.1-alpha`)**](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.1-alpha.apk)
+[**🇬🇧 English**](#english) · [**🇹🇷 Türkçe**](#türkçe) · [**📄 `README.tr.md`**](README.tr.md) · [**📚 Wiki**](docs/wiki/Home.md) · [**🔒 Security**](SECURITY.md) · [**📋 Changelog**](CHANGELOG.md) · [**🤝 Contributing**](CONTRIBUTING.md) · [**⬇️ APK (`v0.3.2-alpha`)**](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.2-alpha.apk)
 
 </div>
 
@@ -38,7 +38,7 @@
 ### 📦 Download & Installation
 
 Grab the Play Protect-compliant, release-signed APK directly:
-- **[Download HNMUI v0.3.1-alpha APK](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.1-alpha.apk)**
+- **[Download HNMUI v0.3.2-alpha APK](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.2-alpha.apk)**
 - After installing, tap **"Set as Default" / "Ayarla"** at the top of the Home Screen and select **HNMUI** as your Default Home App.
 
 ### 🏗️ Architecture & Build Variants
@@ -101,7 +101,7 @@ Requires **JDK 17+** and **Android SDK 35**.
 ### 📦 İndirme ve Kurulum
 
 Play Protect uyumlu, özel sürüm anahtarıyla imzalanmış APK dosyasını doğrudan indirebilirsiniz:
-- **[HNMUI v0.3.1-alpha APK İndir](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.1-alpha.apk)**
+- **[HNMUI v0.3.2-alpha APK İndir](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.2-alpha.apk)**
 - Kurulumdan sonra ana ekranın üstündeki **"Ayarla"** çubuğuna dokunup varsayılan ana ekran uygulaması olarak **HNMUI**'yi seçmeniz yeterlidir.
 
 ### 🛠️ Kaynak Koddan Derleme

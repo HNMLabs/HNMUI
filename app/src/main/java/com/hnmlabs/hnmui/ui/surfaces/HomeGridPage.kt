@@ -292,10 +292,20 @@ fun HomeGridPage(
                             hoveredTarget.pageIndex == homePageIndex &&
                             hoveredTarget.slotIndex == slotIndex
 
+                        val isCreateFolderHovered = hoveredTarget is HoverDropTarget.CreateFolderWithApp &&
+                            hoveredTarget.pageIndex == homePageIndex &&
+                            hoveredTarget.slotIndex == slotIndex
+
                         val highlightAlpha by animateFloatAsState(
                             targetValue = if (isCellHovered && dragController.isDragging) 1f else 0f,
                             animationSpec = HnmMotion.slotHighlightSpring(),
                             label = "cellHighlightAlpha"
+                        )
+
+                        val createFolderAlpha by animateFloatAsState(
+                            targetValue = if (isCreateFolderHovered && dragController.isDragging) 1f else 0f,
+                            animationSpec = HnmMotion.slotHighlightSpring(),
+                            label = "createFolderHighlightAlpha"
                         )
 
                         Box(
@@ -313,6 +323,27 @@ fun HomeGridPage(
                                         .border(
                                             width = 1.2.dp,
                                             color = Color(0x9938BDF8),
+                                            shape = SquircleShape.Icon
+                                        )
+                                )
+                            }
+
+                            if (createFolderAlpha > 0.02f) {
+                                val haloScale = 1f + 0.09f * createFolderAlpha
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = if (gridSpec.iconSizeDp <= 42) 0.dp else 1.dp)
+                                        .size((gridSpec.iconSizeDp + 8).dp)
+                                        .graphicsLayer {
+                                            alpha = createFolderAlpha
+                                            scaleX = haloScale
+                                            scaleY = haloScale
+                                        }
+                                        .clip(SquircleShape.Icon)
+                                        .background(Color(0x45FFFFFF))
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = HnmPalette.AccentCyan,
                                             shape = SquircleShape.Icon
                                         )
                                 )

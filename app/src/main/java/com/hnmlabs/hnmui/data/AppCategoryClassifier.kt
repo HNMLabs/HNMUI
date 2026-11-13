@@ -1,6 +1,7 @@
 package com.hnmlabs.hnmui.data
 
 import android.content.pm.ApplicationInfo
+import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.model.AppCategory
 import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.AppLibraryGroup
@@ -14,23 +15,26 @@ object AppCategoryClassifier {
     private val socialKeywords = listOf(
         "whatsapp", "instagram", "telegram", "twitter", "zhiliaoapp", "tiktok",
         "facebook", "messenger", "discord", "snapchat", "linkedin", "threads",
-        "messages", "mms", "messaging", "dialer", "contacts"
+        "messages", "mms", "messaging", "dialer", "contacts", "iletisim", "mesaj", "rehber"
     )
 
     private val productivityKeywords = listOf(
         "gmail", "mail", "outlook", "calendar", "docs", "sheets", "slides",
         "notion", "slack", "teams", "zoom", "drive", "keep", "notes",
-        "bank", "garanti", "isbank", "yapikredi", "akbank", "ziraat", "papara", "wallet", "finance"
+        "bank", "garanti", "isbank", "iscep", "yapikredi", "akbank", "ziraat",
+        "papara", "wallet", "finance", "takvim", "notlar"
     )
 
     private val mediaKeywords = listOf(
         "youtube", "spotify", "netflix", "music", "gallery", "photos",
-        "camera", "vlc", "twitch", "disney", "primevideo", "podcast", "player"
+        "camera", "vlc", "twitch", "disney", "primevideo", "podcast", "player",
+        "kamera", "galeri", "muzik"
     )
 
     private val utilityKeywords = listOf(
         "settings", "calculator", "clock", "deskclock", "files", "filemanager",
-        "weather", "maps", "chrome", "browser", "firefox", "vending", "edevlet", "turkiye"
+        "weather", "maps", "chrome", "browser", "firefox", "vending", "edevlet", "turkiye",
+        "ayarlar", "hesap", "saat", "dosya", "harita", "tarayici"
     )
 
     fun classify(
@@ -49,7 +53,7 @@ object AppCategoryClassifier {
             ApplicationInfo.CATEGORY_NEWS -> return AppCategory.UTILITIES
         }
 
-        val haystack = "${packageName.lowercase()} ${label.lowercase()}"
+        val haystack = "${TurkishSearchNormalizer.foldAscii(packageName)} ${TurkishSearchNormalizer.foldAscii(label)}"
         return when {
             socialKeywords.any { haystack.contains(it) } -> AppCategory.SOCIAL
             productivityKeywords.any { haystack.contains(it) } -> AppCategory.PRODUCTIVITY
@@ -77,7 +81,7 @@ object AppCategoryClassifier {
             .sortedWith(
                 compareByDescending<AppItem> { launchCounts[it.key.stableId] ?: 0 }
                     .thenByDescending { it.badgeCount }
-                    .thenBy { it.label.lowercase() }
+                    .thenBy { TurkishSearchNormalizer.foldTurkishI(it.label) }
             )
             .take(8)
         if (suggested.isNotEmpty()) {
@@ -105,7 +109,7 @@ object AppCategoryClassifier {
         for (category in orderedCategories) {
             val matching = apps
                 .filter { it.category == category }
-                .sortedBy { it.label.lowercase() }
+                .sortedBy { TurkishSearchNormalizer.foldTurkishI(it.label) }
             if (matching.isNotEmpty()) {
                 result += AppLibraryGroup(category, matching)
             }

@@ -26,6 +26,8 @@ class HnmNotificationListenerService : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         _isServiceConnected.value = false
+        _badgeCounts.value = emptyMap()
+        _activeCards.value = emptyList()
         instanceRef = null
         super.onListenerDisconnected()
     }
@@ -61,7 +63,7 @@ class HnmNotificationListenerService : NotificationListenerService() {
 
             if (!rawTitle.isNullOrEmpty() || !rawText.isNullOrEmpty()) {
                 cards += LiveNotificationCard(
-                    key = sbn.key ?: "${pkg}_${sbn.id}_${sbn.postTime}",
+                    key = sbn.key ?: "${pkg}_${sbn.tag.orEmpty()}_${sbn.id}_${sbn.postTime}",
                     packageName = pkg,
                     title = rawTitle ?: pkg,
                     message = rawText.orEmpty(),
@@ -73,6 +75,7 @@ class HnmNotificationListenerService : NotificationListenerService() {
         _badgeCounts.value = counts
         _activeCards.value = cards
             .sortedByDescending { it.postTimeMillis }
+            .distinctBy { it.key }
             .take(24)
     }
 

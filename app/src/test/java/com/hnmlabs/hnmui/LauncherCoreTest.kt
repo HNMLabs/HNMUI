@@ -227,6 +227,146 @@ class LauncherCoreTest {
         assertEquals(dialer, thirdItem.key)
     }
 
+    @Test
+    fun `turkish search normalizer matches dotted and dotless I across English and Turkish apps`() {
+        assertTrue(
+            com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.containsMatch("InShot", "inshot")
+        )
+        assertTrue(
+            com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.containsMatch("Instagram", "insta")
+        )
+        assertTrue(
+            com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.containsMatch("Instagram", "İnsta")
+        )
+        assertTrue(
+            com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.containsMatch("İşCep", "iscep")
+        )
+        assertTrue(
+            com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.containsMatch("İşCep", "işcep")
+        )
+        assertTrue(
+            com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.containsMatch("7×7 Izgara", "izgara")
+        )
+        assertFalse(
+            com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.containsMatch("Sirket", "şirket")
+        )
+    }
+
+    @Test
+    fun `dragging app onto another app creates 2-app folder from home or dock without duplication`() {
+        val dialer = AppComponentKey("com.dialer", "Main")
+        val camera = AppComponentKey("com.camera", "Main")
+        val gallery = AppComponentKey("com.gallery", "Main")
+        val notes = AppComponentKey("com.notes", "Main")
+
+        val initial = com.hnmlabs.hnmui.model.PersistedHomeState(
+            dock = listOf(dialer),
+            pages = listOf(
+                com.hnmlabs.hnmui.model.HomePageModel(
+                    id = "page_1",
+                    items = listOf(
+                        HomeGridItem.AppTile(camera),
+                        HomeGridItem.AppTile(gallery),
+                        HomeGridItem.AppTile(notes)
+                    )
+                )
+            )
+        )
+
+        // 1) Ana ekrandaki Galeri ikonunu Kamera ikonunun üstüne bırakarak yeni klasör kurma
+        val afterHomeFolderCreate = HomeLayoutRepository.applyDragDropToState(
+            state = initial,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(
+                pageIndex = 0,
+                slotIndex = 1,
+                expectedItemId = "app:${gallery.stableId}"
+            ),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.CreateFolderWithApp(
+                targetAppKey = camera,
+                folderTitle = "Medya"
+            ),
+            maxPerPage = 24,
+            maxDockItems = 4
+        )
+
+        assertEquals(2, afterHomeFolderCreate.pages.first().items.size)
+        val createdFolder = afterHomeFolderCreate.pages.first().items.first() as HomeGridItem.FolderTile
+        assertEquals("Medya", createdFolder.title)
+        assertEquals(listOf(camera, gallery), createdFolder.apps)
+
+        // 2) Dock'taki Telefon ikonunu Notlar ikonunun üstüne bırakarak Dock'tan çıkarıp klasör kurma
+        val afterDockFolderCreate = HomeLayoutRepository.applyDragDropToState(
+            state = afterHomeFolderCreate,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.DockSlot(
+                dockIndex = 0,
+                expectedAppKey = dialer
+            ),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.CreateFolderWithApp(
+                targetAppKey = notes,
+                folderTitle = "İletişim"
+            ),
+            maxPerPage = 24,
+            maxDockItems = 4
+        )
+
+        assertTrue(afterDockFolderCreate.dock.isEmpty())
+        assertEquals(2, afterDockFolderCreate.pages.first().items.size)
+        val secondFolder = afterDockFolderCreate.pages.first().items[1] as HomeGridItem.FolderTile
+        assertEquals(listOf(notes, dialer), secondFolder.apps)
+    }
+
+    @Test
+    fun `identity verified drag locates shifted slot and uninstall pruning collapses 1-app folders`() {
+        val appA = AppComponentKey("com.a", "Main")
+        val appB = AppComponentKey("com.b", "Main")
+        val appC = AppComponentKey("com.c", "Main")
+        val uninstalled = AppComponentKey("com.removed", "Main")
+
+        val state = com.hnmlabs.hnmui.model.PersistedHomeState(
+            dock = listOf(appA, uninstalled),
+            pages = listOf(
+                com.hnmlabs.hnmui.model.HomePageModel(
+                    id = "page_1",
+                    items = listOf(
+                        HomeGridItem.FolderTile(
+                            id = "folder_1",
+                            title = "Araçlar",
+                            apps = listOf(appB, uninstalled)
+                        ),
+                        HomeGridItem.AppTile(appC)
+                    )
+                )
+            )
+        )
+
+        // Kaldırılan uygulama temizlendiğinde 1 uygulamaya düşen klasör tekil ikona dönüşmeli
+        val pruned = HomeLayoutRepository.pruneUninstalledAndNormalize(
+            state = state,
+            installedIds = setOf(appA.stableId, appB.stableId, appC.stableId),
+            maxPerPage = 24
+        )
+        assertEquals(listOf(appA), pruned.dock)
+        assertEquals(
+            listOf(HomeGridItem.AppTile(appB), HomeGridItem.AppTile(appC)),
+            pruned.pages.first().items
+        )
+
+        // Slot indeksi kaymış olsa bile expectedItemId doğru uygulamayı bulup Dock'a taşımalı
+        val movedWithStaleSlot = HomeLayoutRepository.applyDragDropToState(
+            state = pruned,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(
+                pageIndex = 0,
+                slotIndex = 0, // Yanlış/eski slot indeksi (gerçekte appC slot 1'de)
+                expectedItemId = "app:${appC.stableId}"
+            ),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.DockCell(1),
+            maxPerPage = 24,
+            maxDockItems = 4
+        )
+        assertEquals(listOf(appA, appC), movedWithStaleSlot.dock)
+        assertEquals(listOf(HomeGridItem.AppTile(appB)), movedWithStaleSlot.pages.first().items)
+    }
+
     private fun sampleApp(pkg: String, label: String, category: AppCategory): AppItem {
         return AppItem(
             key = AppComponentKey(packageName = pkg, className = "$pkg.MainActivity"),

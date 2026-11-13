@@ -7,8 +7,10 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +49,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.hnmlabs.hnmui.model.AppComponentKey
@@ -63,6 +67,7 @@ import com.hnmlabs.hnmui.ui.theme.HnmPalette
  * Ana ekranda aşağı kaydırıldığında veya "Ara" hapına dokunulduğunda açılan
  * iOS Spotlight tarzı hızlı uygulama, öneri ve web arama katmanı.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SpotlightOverlay(
     visible: Boolean,
@@ -79,6 +84,7 @@ fun SpotlightOverlay(
     onDismiss: () -> Unit
 ) {
     val focusRequester = remember { FocusRequester() }
+    val haptics = LocalHapticFeedback.current
 
     LaunchedEffect(visible) {
         if (visible) {
@@ -266,7 +272,13 @@ fun SpotlightOverlay(
                                 GlassSurface(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onLaunchApp(app) },
+                                        .combinedClickable(
+                                            onClick = { onLaunchApp(app) },
+                                            onLongClick = {
+                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                onAppLongPress(app)
+                                            }
+                                        ),
                                     shape = RoundedCornerShape(18.dp),
                                     tone = GlassTone.ELEVATED_MODAL
                                 ) {

@@ -26,11 +26,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AirplanemodeActive
@@ -51,11 +53,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,7 +74,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.hnmlabs.hnmui.core.system.ConnectivitySnapshot
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
+import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
@@ -77,6 +88,9 @@ import com.hnmlabs.hnmui.ui.components.SquircleShape
 import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Ana ekranda sağ üstten aşağı çekildiğinde açılan iOS tarzı buzlu cam Denetim Merkezi.
@@ -95,10 +109,13 @@ fun ControlCenterOverlay(
     val context = LocalContext.current
     val activity = context as? Activity
     val haptics = LocalHapticFeedback.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
 
     var connectivity by remember {
         mutableStateOf(
-            com.hnmlabs.hnmui.core.system.ConnectivitySnapshot(
+            ConnectivitySnapshot(
                 isWifiConnected = true,
                 isCellularConnected = false,
                 isAirplaneMode = false,
@@ -109,27 +126,42 @@ fun ControlCenterOverlay(
     var brightness by remember { mutableFloatStateOf(0.6f) }
     var volume by remember { mutableFloatStateOf(0.5f) }
     var isRotationLocked by remember { mutableStateOf(false) }
-    var isTorchOn by remember { mutableStateOf(false) }
+    val isTorchOn by DeviceSystemController.isTorchEnabled.collectAsStateWithLifecycle()
+
+    suspend fun refreshSystemState() {
+        DeviceSystemController.ensureTorchObserver(context)
+        val winBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
+        val (net, disp, aud) = withContext(Dispatchers.IO) {
+            Triple(
+                DeviceSystemController.readConnectivitySnapshot(context),
+                DeviceSystemController.readDisplaySnapshot(context, null),
+                DeviceSystemController.readAudioSnapshot(context)
+            )
+        }
+        connectivity = net
+        brightness = if (winBrightness in 0.01f..1.0f && !disp.canWriteSystemSettings) {
+            winBrightness.coerceIn(0.02f, 1f)
+        } else {
+            disp.brightnessFraction
+        }
+        isRotationLocked = disp.isRotationLocked
+        volume = aud.mediaFraction
+    }
 
     LaunchedEffect(visible) {
         if (visible) {
-            val winBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
-            val (net, disp, aud) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                Triple(
-                    DeviceSystemController.readConnectivitySnapshot(context),
-                    DeviceSystemController.readDisplaySnapshot(context, null),
-                    DeviceSystemController.readAudioSnapshot(context)
-                )
-            }
-            connectivity = net
-            brightness = if (winBrightness in 0.01f..1.0f && !disp.canWriteSystemSettings) {
-                winBrightness
-            } else {
-                disp.brightnessFraction
-            }
-            isRotationLocked = disp.isRotationLocked
-            volume = aud.mediaFraction
+            refreshSystemState()
         }
+    }
+
+    DisposableEffect(lifecycleOwner, visible) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (visible && event == Lifecycle.Event.ON_RESUME) {
+                coroutineScope.launch { refreshSystemState() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     AnimatedVisibility(
@@ -165,7 +197,7 @@ fun ControlCenterOverlay(
                                 if (upwardSwipePx < -85f) {
                                     dismissedInGesture = true
                                     change.consume()
-                                    onDismiss()
+                                    currentOnDismiss()
                                 }
                             }
                         }
@@ -180,7 +212,9 @@ fun ControlCenterOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .hnmSafeTopPadding()
+                    .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 14.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -413,10 +447,7 @@ fun ControlCenterOverlay(
                                 modifier = Modifier.weight(1f),
                                 onClick = {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    val next = !isTorchOn
-                                    if (DeviceSystemController.toggleFlashlight(context, next)) {
-                                        isTorchOn = next
-                                    }
+                                    DeviceSystemController.toggleFlashlight(context, !isTorchOn)
                                 }
                             )
                             QuickToggleTile(
@@ -449,8 +480,8 @@ fun ControlCenterOverlay(
                                 modifier = Modifier.weight(1f),
                                 onClick = {
                                     val calc = allApps.firstOrNull {
-                                        it.key.packageName.lowercase().contains("calc") ||
-                                            it.label.lowercase().contains("hesap")
+                                        TurkishSearchNormalizer.containsMatch(it.key.packageName, "calc") ||
+                                            TurkishSearchNormalizer.containsMatch(it.label, "hesap")
                                     }
                                     if (calc != null) onLaunchApp(calc) else onOpenHnmSettings()
                                 }
@@ -462,8 +493,8 @@ fun ControlCenterOverlay(
                                 modifier = Modifier.weight(1f),
                                 onClick = {
                                     val cam = allApps.firstOrNull {
-                                        it.key.packageName.lowercase().contains("camera") ||
-                                            it.label.lowercase().contains("kamera")
+                                        TurkishSearchNormalizer.containsMatch(it.key.packageName, "camera") ||
+                                            TurkishSearchNormalizer.containsMatch(it.label, "kamera")
                                     }
                                     if (cam != null) onLaunchApp(cam) else onDismiss()
                                 }
@@ -582,6 +613,7 @@ private fun VerticalGlassSlider(
     modifier: Modifier = Modifier
 ) {
     var heightPx by remember { mutableFloatStateOf(1f) }
+    val currentOnFractionChange by rememberUpdatedState(onFractionChange)
     val safeFraction = if (fraction.isFinite()) fraction else 0.5f
     val clamped = safeFraction.coerceIn(0f, 1f)
 
@@ -592,12 +624,12 @@ private fun VerticalGlassSlider(
                 detectVerticalDragGestures(
                     onDragStart = { offset ->
                         val next = 1f - (offset.y / heightPx.coerceAtLeast(1f))
-                        if (next.isFinite()) onFractionChange(next.coerceIn(0f, 1f))
+                        if (next.isFinite()) currentOnFractionChange(next.coerceIn(0f, 1f))
                     },
                     onVerticalDrag = { change, _ ->
                         change.consume()
                         val next = 1f - (change.position.y / heightPx.coerceAtLeast(1f))
-                        if (next.isFinite()) onFractionChange(next.coerceIn(0f, 1f))
+                        if (next.isFinite()) currentOnFractionChange(next.coerceIn(0f, 1f))
                     }
                 )
             },

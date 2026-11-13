@@ -35,6 +35,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
@@ -45,7 +46,6 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.NotificationsNone
-import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material3.Icon
@@ -58,6 +58,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,7 +80,10 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.hnmlabs.hnmui.core.system.BatterySnapshot
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
+import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.LiveNotificationCard
@@ -91,6 +96,10 @@ import com.hnmlabs.hnmui.ui.components.SquircleShape
 import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -123,6 +132,8 @@ fun NotificationCenterOverlay(
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
+    val coroutineScope = rememberCoroutineScope()
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
     val trLocale = remember { Locale("tr", "TR") }
     val clockFmt = remember { DateTimeFormatter.ofPattern("HH:mm", trLocale) }
     val dateFmt = remember { DateTimeFormatter.ofPattern("d MMMM EEEE", trLocale) }
@@ -130,7 +141,7 @@ fun NotificationCenterOverlay(
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var battery by remember {
         mutableStateOf(
-            com.hnmlabs.hnmui.core.system.BatterySnapshot(
+            BatterySnapshot(
                 levelPercent = 100,
                 isCharging = false,
                 sourceLabel = "Pil Kullanımda",
@@ -144,18 +155,22 @@ fun NotificationCenterOverlay(
         )
     }
     var ringerMode by remember { mutableIntStateOf(AudioManager.RINGER_MODE_NORMAL) }
-    var isTorchOn by remember { mutableStateOf(false) }
+    val isTorchOn by DeviceSystemController.isTorchEnabled.collectAsStateWithLifecycle()
     var draftNote by remember { mutableStateOf("") }
 
     LaunchedEffect(visible) {
         if (visible) {
-            now = LocalDateTime.now()
-            val (bat, ringer) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                DeviceSystemController.readBatterySnapshot(context) to
-                    DeviceSystemController.readAudioSnapshot(context).ringerMode
+            DeviceSystemController.ensureTorchObserver(context)
+            while (true) {
+                now = LocalDateTime.now()
+                val (bat, ringer) = withContext(Dispatchers.IO) {
+                    DeviceSystemController.readBatterySnapshot(context) to
+                        DeviceSystemController.readAudioSnapshot(context).ringerMode
+                }
+                battery = bat
+                ringerMode = ringer
+                delay(30_000L)
             }
-            battery = bat
-            ringerMode = ringer
         }
     }
 
@@ -204,7 +219,7 @@ fun NotificationCenterOverlay(
                                 if (upwardDragPx < -90f) {
                                     dismissedInGesture = true
                                     change.consume()
-                                    onDismiss()
+                                    currentOnDismiss()
                                 }
                             }
                         }
@@ -241,7 +256,7 @@ fun NotificationCenterOverlay(
                             horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.OpenInNew,
+                                imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
                                 contentDescription = null,
                                 tint = HnmPalette.TextMuted,
                                 modifier = Modifier.size(13.dp)
@@ -342,8 +357,14 @@ fun NotificationCenterOverlay(
                             } else {
                                 AudioManager.RINGER_MODE_NORMAL
                             }
-                            DeviceSystemController.setRingerMode(context, next)
-                            ringerMode = DeviceSystemController.readAudioSnapshot(context).ringerMode
+                            ringerMode = next
+                            coroutineScope.launch {
+                                val actual = withContext(Dispatchers.IO) {
+                                    DeviceSystemController.setRingerMode(context, next)
+                                    DeviceSystemController.readAudioSnapshot(context).ringerMode
+                                }
+                                ringerMode = actual
+                            }
                         }
                     ) {
                         Row(
@@ -396,7 +417,7 @@ fun NotificationCenterOverlay(
                             }
                         }
 
-                        items(liveNotifications, key = { it.key }) { card ->
+                        items(liveNotifications.distinctBy { it.key }, key = { it.key }) { card ->
                             val matchedApp = appByPackage[card.packageName]
                             GlassSurface(
                                 modifier = Modifier
@@ -494,7 +515,7 @@ fun NotificationCenterOverlay(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = " Anlık Hatırlatıcılar",
+                                        text = "Anlık Hatırlatıcılar",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.SemiBold
                                     )
@@ -678,10 +699,7 @@ fun NotificationCenterOverlay(
                         active = isTorchOn,
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val next = !isTorchOn
-                            if (DeviceSystemController.toggleFlashlight(context, next)) {
-                                isTorchOn = next
-                            }
+                            DeviceSystemController.toggleFlashlight(context, !isTorchOn)
                         }
                     )
 
@@ -716,8 +734,8 @@ fun NotificationCenterOverlay(
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             val cam = allApps.firstOrNull {
-                                it.key.packageName.lowercase().contains("camera") ||
-                                    it.label.lowercase().contains("kamera")
+                                TurkishSearchNormalizer.containsMatch(it.key.packageName, "camera") ||
+                                    TurkishSearchNormalizer.containsMatch(it.label, "kamera")
                             }
                             onDismiss()
                             if (cam != null) onLaunchApp(cam)

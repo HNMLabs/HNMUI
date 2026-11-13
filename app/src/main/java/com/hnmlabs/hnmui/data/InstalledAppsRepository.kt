@@ -2,6 +2,7 @@ package com.hnmlabs.hnmui.data
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherActivityInfo
 import android.content.pm.LauncherApps
@@ -24,9 +25,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import java.text.Collator
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Yüklü tüm başlatılabilir uygulamaları, ikon önbelleğini ve uygulama kısayollarını yönetir.
@@ -36,11 +39,14 @@ class InstalledAppsRepository(
     private val context: Context
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val refreshMutex = Mutex()
+    private val refreshRequested = AtomicBoolean(false)
+
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
     private val userManager = context.getSystemService(UserManager::class.java)
     private val packageManager = context.packageManager
 
-    private val iconCache = object : LruCache<String, ImageBitmap>(180) {}
+    private val iconCache = object : LruCache<String, ImageBitmap>(200) {}
 
     private val _apps = MutableStateFlow<List<AppItem>>(emptyList())
     val apps: StateFlow<List<AppItem>> = _apps.asStateFlow()
@@ -65,6 +71,9 @@ class InstalledAppsRepository(
             user: UserHandle?,
             replacing: Boolean
         ) {
+            if (replacing) {
+                packageNames?.forEach { evictIconsForPackage(it) }
+            }
             refreshAppsAsync()
         }
 
@@ -73,6 +82,7 @@ class InstalledAppsRepository(
             user: UserHandle?,
             replacing: Boolean
         ) {
+            packageNames?.forEach { evictIconsForPackage(it) }
             refreshAppsAsync()
         }
     }
@@ -83,8 +93,25 @@ class InstalledAppsRepository(
     }
 
     fun refreshAppsAsync() {
+        refreshRequested.set(true)
         scope.launch {
-            _apps.value = loadInstalledApps()
+            if (!refreshMutex.tryLock()) return@launch
+            try {
+                while (refreshRequested.getAndSet(false)) {
+                    _apps.value = loadInstalledApps()
+                }
+            } finally {
+                refreshMutex.unlock()
+                if (refreshRequested.get() && refreshMutex.tryLock()) {
+                    try {
+                        while (refreshRequested.getAndSet(false)) {
+                            _apps.value = loadInstalledApps()
+                        }
+                    } finally {
+                        refreshMutex.unlock()
+                    }
+                }
+            }
         }
     }
 
@@ -237,7 +264,9 @@ class InstalledAppsRepository(
             la.startMainActivity(component, handle, null, null)
             true
         }.getOrElse {
-            val launchIntent = packageManager.getLaunchIntentForPackage(key.packageName)
+            val launchIntent = packageManager.getLaunchIntentForPackage(key.packageName)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             if (launchIntent != null) {
                 runCatching {
                     context.startActivity(launchIntent)
@@ -273,21 +302,22 @@ class InstalledAppsRepository(
     }
 
     private fun drawableToImageBitmap(drawable: Drawable, targetPx: Int = 180): ImageBitmap {
-        val bitmap = Bitmap.createBitmap(targetPx, targetPx, Bitmap.Config.ARGB_8888)
+        val safePx = targetPx.coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(safePx, safePx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
         if (drawable is android.graphics.drawable.AdaptiveIconDrawable) {
-            val bleed = (targetPx * android.graphics.drawable.AdaptiveIconDrawable.getExtraInsetFraction() * 0.65f).toInt()
+            val bleed = (safePx * android.graphics.drawable.AdaptiveIconDrawable.getExtraInsetFraction() * 0.65f).toInt()
             drawable.background?.let { bg ->
-                bg.setBounds(-bleed, -bleed, targetPx + bleed, targetPx + bleed)
+                bg.setBounds(-bleed, -bleed, safePx + bleed, safePx + bleed)
                 bg.draw(canvas)
             }
             drawable.foreground?.let { fg ->
-                fg.setBounds(-bleed, -bleed, targetPx + bleed, targetPx + bleed)
+                fg.setBounds(-bleed, -bleed, safePx + bleed, safePx + bleed)
                 fg.draw(canvas)
             }
         } else {
-            drawable.setBounds(0, 0, targetPx, targetPx)
+            drawable.setBounds(0, 0, safePx, safePx)
             drawable.draw(canvas)
         }
 
