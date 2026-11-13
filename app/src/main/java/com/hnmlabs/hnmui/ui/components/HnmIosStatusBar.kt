@@ -51,8 +51,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.text.TextStyle
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.WallpaperLabelShadow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -78,8 +81,8 @@ fun Modifier.hnmSafeTopPadding(): Modifier = composed {
 
 /**
  * Samsung One UI durum çubuğu ikonları yerine ana ekranın en üstünde yer alan minimalist iOS Durum Çubuğu.
- * - Sol kulak: Canlı saat (dokunma veya aşağı çekme -> HNM Bildirim Merkezi)
- * - Sağ kulak: Hücresel + Wi-Fi + iOS Pil kapsülü ve ince Denetim Merkezi çizgisi (dokunma/çekme -> Denetim Merkezi)
+ * - Sol yarı (tam genişlik dokunma/çekme alanı): Canlı saat -> HNM Bildirim Merkezi
+ * - Sağ yarı (tam genişlik dokunma/çekme alanı): Hücresel + Wi-Fi + iOS Pil + tutamaç -> Denetim Merkezi
  */
 @Composable
 fun HnmIosStatusBar(
@@ -196,45 +199,53 @@ fun HnmIosStatusBar(
     }
 
     val cutoutPadding = WindowInsets.displayCutout.asPaddingValues()
-    val barHeight: Dp = max(cutoutPadding.calculateTopPadding(), 36.dp)
+    val barHeight: Dp = max(cutoutPadding.calculateTopPadding(), 42.dp)
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(barHeight)
-            .padding(horizontal = 22.dp),
+            .padding(horizontal = 18.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Sol kulak: iOS Saat (Bildirim Merkezi tetikleyicisi)
+        // Sol yarı: Tam genişlik Bildirim Merkezi dokunma & çekme hedefi
         Row(
             modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = onTapLeftNotifications
                 )
-                .padding(vertical = 4.dp, horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(start = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start
         ) {
             Text(
                 text = timeText,
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-0.2).sp
+                style = TextStyle(
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.2).sp,
+                    shadow = WallpaperLabelShadow
+                )
             )
         }
 
-        // Sağ kulak: Sinyal + Wi-Fi + iOS Pil kapsülü + Denetim Merkezi mikro çizgisi
+        // Sağ yarı: Tam genişlik Denetim Merkezi dokunma & çekme hedefi
         Column(
             modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = onTapRightControlCenter
                 )
-                .padding(vertical = 2.dp, horizontal = 4.dp),
+                .padding(end = 4.dp),
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.Center
         ) {
@@ -261,13 +272,13 @@ fun HnmIosStatusBar(
                     isCharging = isCharging
                 )
             }
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(2.5.dp))
             Box(
                 modifier = Modifier
-                    .width(24.dp)
-                    .height(2.2.dp)
+                    .width(28.dp)
+                    .height(2.6.dp)
                     .clip(CircleShape)
-                    .background(Color(0x78FFFFFF))
+                    .background(Color(0x94FFFFFF))
             )
         }
     }

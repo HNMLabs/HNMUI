@@ -5,6 +5,23 @@ All notable changes to **HNMUI** are documented in this file.
 
 ---
 
+## [0.3.4-alpha] — 2026-11-13 (System Adaptive Glass & Zero-Miss Control Center)
+
+### 🌗 System Adaptive Appearance Engine / Sistem Uyumlu Açık & Koyu Cam Motoru
+- **EN:** Introduced flagship **`HnmThemeMode` (`SYSTEM` / `LIGHT` / `DARK`)** tracking Android's live system Dark/Light mode (`isSystemInDarkTheme()` via zero-restart `uiMode` handling) alongside instant manual overrides in **Control Center** (`Otomatik` / `Açık` / `Koyu`) and **HNM Settings** (*Home Screen, Folder & Dock* + *Display & Brightness*).
+- **EN:** Engineered smooth **`380ms` cubic-bezier (`0.22, 1.0, 0.36, 1.0`) color & glass transitions** across **Midnight Dark Glass** and **Daylight Pearlescent Glass** (`GlassSurface` `DOCK` / `CARD` / `ELEVATED_MODAL` / `PILL`, overlays, typography, inputs, sliders, switches, and `WindowInsetsControllerCompat` status/navigation bar contrast) with **0% idle CPU cost** once settled.
+- **EN:** Separated `AppIconTile` / `FolderIconTile` optical contrast (`onGlassSurface = true` crisp ink inside frosted sheets vs shadowed `onWallpaperPrimary` over live wallpapers) for full WCAG readability on both bright and dark wallpapers.
+- **TR:** Android sisteminin Açık/Koyu modunu yeniden başlatma gerektirmeden canlı takip eden ve **Denetim Merkezi** ile **HNM Ayarlar** (*Ana Ekran, Klasör & Dock* ve *Ekran ve Parlaklık*) üzerinden anında değiştirilebilen **`HnmThemeMode` (`Otomatik` / `Açık` / `Koyu`)** motoru eklendi.
+- **TR:** **Gece Koyu Cam** (*Midnight Dark Glass*) ile **Sedefli Açık Cam** (*Daylight Pearlescent Glass*) arasında tüm cam yüzeyler, kartlar, sürgüler, yazılar ve sistem çubukları boyunca **`380 ms` akıcı geçiş animasyonu** (boşta **%0 CPU** yükü) ve tam kontrast uyumu sağlandı.
+
+### 🎯 Zero-Miss Control Center & Performance Polish / Kesintisiz Denetim Merkezi ve Performans
+- **EN:** Rebuilt top/right pull-down classification (`classifyDownwardPull`) with a camera-cutout-aware **`86dp+` top strip across all pages & Edit Mode**, **`14dp` instant trigger threshold**, natural diagonal right-thumb arc tolerance (`dy >= dx * 0.72f`), expanded mid-right Home one-handed pull zone (`68%` height), full-half-width `HnmIosStatusBar` tap/pull targets, post-trigger pointer drain loop, auto-rehide of transient OEM status bars (`1.6s`), and non-blocking hit-testing on exiting overlays.
+- **EN:** Eliminated idle per-slot `animateFloatAsState` + `graphicsLayer` allocations in `LauncherBottomDockBar` when not dragging and memoized `cameraApp` lookup in `NotificationCenterOverlay`.
+- **TR:** Denetim Merkezi'nin bazen açılıp bazen açılmama sorunu kökten çözüldü: kamera deliği duyarlı **`86dp+` üst şerit** (tüm sayfalar + Düzenleme Modu), **`14dp` hızlı tetikleme**, sağ başparmak çapraz kavis toleransı, sağ kenar tek el çekme alanı (`%68` yükseklik), tam yarım ekran `HnmIosStatusBar` dokunma/çekme hedefleri, kapanan panellerde dokunma kilitlememe ve geçici sistem çubuğunu otomatik gizleme (`1.6 sn`) eklendi.
+- **TR:** Sürükleme yokken alt Dock yuvalarındaki boşta animatör ve GPU katmanı tahsisatları sıfırlandı; Bildirim Merkezi kamera kısayolu araması önbelleğe alındı.
+
+---
+
 ## [0.3.3-alpha] — 2026-11-13 (Zero-Freeze & 120 FPS Fluidity Engine)
 
 ### ⚡ Performance & Fluidity / Performans ve Sıfır Donma Motoru

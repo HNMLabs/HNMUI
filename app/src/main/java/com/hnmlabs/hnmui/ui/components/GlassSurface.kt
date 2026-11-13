@@ -15,18 +15,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
 import kotlin.math.roundToInt
 
 val LocalGlassOpacityFactor = compositionLocalOf { 1f }
-
-private val GlassBorderBrush = Brush.verticalGradient(
-    colors = listOf(
-        HnmPalette.SpecularHighlight,
-        HnmPalette.SubtleBorder,
-        Color(0x16FFFFFF)
-    )
-)
 
 enum class GlassTone {
     DOCK,
@@ -37,8 +29,8 @@ enum class GlassTone {
 
 /**
  * HNMUI Buzlu Cam (Frosted Glass) yüzeyi.
- * Kullanıcının HNM Ayarlar içinden seçtiği cam yoğunluğu çarpanına (LocalGlassOpacityFactor)
- * canlı olarak uyum sağlar; yarı saydam yüzeylerde iz bırakan donanım gölgesi kullanmaz.
+ * Hem Koyu (Midnight Glass) hem Açık (Daylight Pearlescent Glass) görünüm modlarına
+ * ve kullanıcının seçtiği cam yoğunluğu çarpanına (LocalGlassOpacityFactor) canlı uyum sağlar.
  */
 @Composable
 @Suppress("UNUSED_PARAMETER")
@@ -49,46 +41,46 @@ fun GlassSurface(
     shadowElevation: Dp = 0.dp,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val colors = HnmTheme.colors
     val quantizedOpacity = ((LocalGlassOpacityFactor.current.coerceIn(0.65f, 1.40f) * 100f)
         .roundToInt()) / 100f
 
-    val fillBrush = remember(tone, quantizedOpacity) {
-        fun scaleAlpha(color: Color): Color =
-            color.copy(alpha = (color.alpha * quantizedOpacity).coerceIn(0.10f, 0.96f))
+    val (rawTop, rawBottom) = when (tone) {
+        GlassTone.DOCK -> colors.glassDockFillTop to colors.glassDockFillBottom
+        GlassTone.CARD -> colors.glassCardFillTop to colors.glassCardFillBottom
+        GlassTone.ELEVATED_MODAL -> colors.glassModalFillTop to colors.glassModalFillBottom
+        GlassTone.PILL -> colors.glassPillFillTop to colors.glassPillFillBottom
+    }
 
-        when (tone) {
-            GlassTone.DOCK -> Brush.verticalGradient(
-                colors = listOf(
-                    scaleAlpha(HnmPalette.GlassDockFillTop),
-                    scaleAlpha(HnmPalette.GlassDockFillBottom)
-                )
+    val fillBrush = remember(rawTop, rawBottom, quantizedOpacity, colors.isDark) {
+        val minAlpha = if (colors.isDark) 0.12f else 0.56f
+        fun scaleAlpha(color: Color): Color =
+            color.copy(alpha = (color.alpha * quantizedOpacity).coerceIn(minAlpha, 0.98f))
+
+        Brush.verticalGradient(
+            colors = listOf(scaleAlpha(rawTop), scaleAlpha(rawBottom))
+        )
+    }
+
+    val borderBrush = remember(
+        colors.specularHighlight,
+        colors.subtleBorder,
+        colors.glassRimBottom
+    ) {
+        Brush.verticalGradient(
+            colors = listOf(
+                colors.specularHighlight,
+                colors.subtleBorder,
+                colors.glassRimBottom
             )
-            GlassTone.CARD -> Brush.verticalGradient(
-                colors = listOf(
-                    scaleAlpha(Color(0x70162032)),
-                    scaleAlpha(Color(0x5C0F172A))
-                )
-            )
-            GlassTone.ELEVATED_MODAL -> Brush.verticalGradient(
-                colors = listOf(
-                    scaleAlpha(Color(0xE01E293B)),
-                    scaleAlpha(Color(0xD90F172A))
-                )
-            )
-            GlassTone.PILL -> Brush.verticalGradient(
-                colors = listOf(
-                    scaleAlpha(Color(0x42FFFFFF)),
-                    scaleAlpha(Color(0x28CBD5E1))
-                )
-            )
-        }
+        )
     }
 
     Box(
         modifier = modifier
             .clip(shape)
             .background(brush = fillBrush, shape = shape)
-            .border(width = 1.dp, brush = GlassBorderBrush, shape = shape),
+            .border(width = 1.dp, brush = borderBrush, shape = shape),
         content = content
     )
 }

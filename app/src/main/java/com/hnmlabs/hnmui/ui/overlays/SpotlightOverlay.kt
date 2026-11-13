@@ -62,6 +62,7 @@ import com.hnmlabs.hnmui.ui.components.MiniAppIconPreview
 import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
 
 /**
  * Ana ekranda aşağı kaydırıldığında veya "Ara" hapına dokunulduğunda açılan
@@ -83,6 +84,7 @@ fun SpotlightOverlay(
     onOpenSystemSettings: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = HnmTheme.colors
     val focusRequester = remember { FocusRequester() }
     val haptics = LocalHapticFeedback.current
 
@@ -111,11 +113,17 @@ fun SpotlightOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(HnmPalette.ScrimOverlay)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss
+                .background(colors.scrimOverlay)
+                .then(
+                    if (visible) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onDismiss
+                        )
+                    } else {
+                        Modifier
+                    }
                 )
         ) {
             Column(
@@ -129,10 +137,16 @@ fun SpotlightOverlay(
                 GlassSurface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {}
+                        .then(
+                            if (visible) {
+                                Modifier.clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = {}
+                                )
+                            } else {
+                                Modifier
+                            }
                         ),
                     shape = RoundedCornerShape(22.dp),
                     tone = GlassTone.ELEVATED_MODAL,
@@ -144,14 +158,14 @@ fun SpotlightOverlay(
                         placeholder = {
                             Text(
                                 text = "Uygulama, kısayol veya web'de ara",
-                                color = HnmPalette.TextSecondary
+                                color = colors.textSecondary
                             )
                         },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Search,
                                 contentDescription = null,
-                                tint = HnmPalette.AccentCyan
+                                tint = colors.accentCyan
                             )
                         },
                         trailingIcon = {
@@ -163,7 +177,7 @@ fun SpotlightOverlay(
                                 Icon(
                                     imageVector = Icons.Rounded.Close,
                                     contentDescription = "Kapat",
-                                    tint = HnmPalette.TextSecondary
+                                    tint = colors.textSecondary
                                 )
                             }
                         },
@@ -182,8 +196,9 @@ fun SpotlightOverlay(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Color.Transparent,
                             unfocusedBorderColor = Color.Transparent,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            focusedTextColor = colors.textPrimary,
+                            unfocusedTextColor = colors.textPrimary,
+                            cursorColor = colors.accentBlue
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -222,6 +237,7 @@ fun SpotlightOverlay(
                                                 AppIconTile(
                                                     app = app,
                                                     iconSize = 54.dp,
+                                                    onGlassSurface = true,
                                                     cachedIconProvider = cachedIconProvider,
                                                     loadIconSuspend = loadIconSuspend,
                                                     onClick = { onLaunchApp(app) },

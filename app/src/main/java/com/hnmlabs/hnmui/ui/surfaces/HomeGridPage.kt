@@ -72,6 +72,7 @@ import com.hnmlabs.hnmui.ui.drag.LauncherDragDropController
 import com.hnmlabs.hnmui.ui.drag.launcherDraggableItem
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
 import kotlin.math.roundToInt
 
 /**
@@ -103,6 +104,7 @@ fun HomeGridPage(
     onPickWallpaper: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = HnmTheme.colors
     val haptics = LocalHapticFeedback.current
 
     val bottomDockClearanceDp = if (gridSpec.dockVisible) {
@@ -162,7 +164,7 @@ fun HomeGridPage(
                     Icon(
                         imageVector = Icons.Rounded.Home,
                         contentDescription = null,
-                        tint = HnmPalette.AccentCyan,
+                        tint = colors.accentCyan,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
@@ -173,10 +175,14 @@ fun HomeGridPage(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(HnmPalette.AccentBlue)
+                            .background(colors.accentBlue)
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
-                        Text(text = "Ayarla", style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            text = "Ayarla",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White
+                        )
                     }
                 }
             }
@@ -211,7 +217,7 @@ fun HomeGridPage(
                             Icon(
                                 imageVector = Icons.Rounded.Wallpaper,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = colors.textPrimary,
                                 modifier = Modifier.size(15.dp)
                             )
                             Text(text = "Duvar", style = MaterialTheme.typography.labelSmall)
@@ -231,7 +237,7 @@ fun HomeGridPage(
                             Icon(
                                 imageVector = Icons.Rounded.Tune,
                                 contentDescription = null,
-                                tint = HnmPalette.AccentCyan,
+                                tint = colors.accentCyan,
                                 modifier = Modifier.size(15.dp)
                             )
                             Text(text = "Izgara & Dock", style = MaterialTheme.typography.labelSmall)
@@ -252,7 +258,7 @@ fun HomeGridPage(
                         Icon(
                             imageVector = Icons.Rounded.Check,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = colors.textPrimary,
                             modifier = Modifier.size(15.dp)
                         )
                         Text(text = "Bitti", style = MaterialTheme.typography.labelSmall)
@@ -329,10 +335,10 @@ fun HomeGridPage(
                                             scaleY = 1.08f
                                         }
                                         .clip(SquircleShape.Icon)
-                                        .background(Color(0x45FFFFFF))
+                                        .background(colors.glassPillFillTop)
                                         .border(
                                             width = 1.5.dp,
-                                            color = HnmPalette.AccentCyan,
+                                            color = colors.accentCyan,
                                             shape = SquircleShape.Icon
                                         )
                                 )
@@ -447,28 +453,39 @@ fun LauncherBottomDockBar(
     onDragEnded: (DragOrigin, HoverDropTarget?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = HnmTheme.colors
     val scale = gridSpec.dockScaleFactor.coerceIn(0.75f, 1.25f)
     val outerHPad = (16f / scale).roundToInt().coerceIn(8, 22).dp
     val innerHPad = (16f * scale).roundToInt().coerceIn(10, 22).dp
     val innerVPad = (11f * scale).roundToInt().coerceIn(7, 16).dp
     val dockCornerRadius = (30f * scale).roundToInt().coerceIn(22, 38).dp
 
-    val isDockDropHovered = dragController.hoveredTarget is HoverDropTarget.DockCell &&
-        dragController.isDragging
+    val isDragging = dragController.isDragging
+    val isDockDropHovered = isDragging && dragController.hoveredTarget is HoverDropTarget.DockCell
 
-    val dockHoverScale by animateFloatAsState(
-        targetValue = if (isDockDropHovered) 1.025f else 1f,
-        animationSpec = HnmMotion.slotHighlightSpring(),
-        label = "dockHoverScale"
-    )
-    val dockBorderColor by animateColorAsState(
-        targetValue = if (isDockDropHovered) Color(0xAA38BDF8) else Color.Transparent,
-        animationSpec = HnmMotion.slotHighlightSpring(),
-        label = "dockBorderColor"
-    )
+    val dockHoverScale = if (isDragging) {
+        val animated by animateFloatAsState(
+            targetValue = if (isDockDropHovered) 1.025f else 1f,
+            animationSpec = HnmMotion.slotHighlightSpring(),
+            label = "dockHoverScale"
+        )
+        animated
+    } else {
+        1f
+    }
+    val dockBorderColor = if (isDragging) {
+        val animated by animateColorAsState(
+            targetValue = if (isDockDropHovered) Color(0xAA38BDF8) else Color.Transparent,
+            animationSpec = HnmMotion.slotHighlightSpring(),
+            label = "dockBorderColor"
+        )
+        animated
+    } else {
+        Color.Transparent
+    }
 
     val showDockContainer = gridSpec.dockVisible &&
-        (dockApps.isNotEmpty() || isEditMode || dragController.isDragging)
+        (dockApps.isNotEmpty() || isEditMode || isDragging)
 
     DisposableEffect(showDockContainer) {
         if (!showDockContainer) {
@@ -503,7 +520,7 @@ fun LauncherBottomDockBar(
                     Icon(
                         imageVector = Icons.Rounded.Search,
                         contentDescription = "Ara",
-                        tint = Color.White,
+                        tint = colors.textPrimary,
                         modifier = Modifier.size(14.dp)
                     )
                     Text(
@@ -526,7 +543,11 @@ fun LauncherBottomDockBar(
                             label = "pageIndicatorWidth_$idx"
                         )
                         val pillColor by animateColorAsState(
-                            targetValue = if (active) Color.White else HnmPalette.SubtleBorder,
+                            targetValue = if (active) {
+                                colors.onWallpaperPrimary
+                            } else {
+                                colors.onWallpaperSecondary.copy(alpha = 0.38f)
+                            },
                             animationSpec = HnmMotion.slotHighlightSpring(),
                             label = "pageIndicatorColor_$idx"
                         )
@@ -544,19 +565,35 @@ fun LauncherBottomDockBar(
 
         if (showDockContainer) {
             val visibleDockApps = dockApps.take(gridSpec.dockMaxItems)
-            val hoveredDockIdx = (dragController.hoveredTarget as? HoverDropTarget.DockCell)?.insertIndex
+            val hoveredDockIdx = if (isDockDropHovered) {
+                (dragController.hoveredTarget as? HoverDropTarget.DockCell)?.insertIndex
+            } else {
+                null
+            }
 
             GlassSurface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .graphicsLayer {
-                        scaleX = dockHoverScale
-                        scaleY = dockHoverScale
-                    }
-                    .border(
-                        width = 1.2.dp,
-                        color = dockBorderColor,
-                        shape = RoundedCornerShape(dockCornerRadius)
+                    .then(
+                        if (dockHoverScale != 1f) {
+                            Modifier.graphicsLayer {
+                                scaleX = dockHoverScale
+                                scaleY = dockHoverScale
+                            }
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .then(
+                        if (dockBorderColor != Color.Transparent) {
+                            Modifier.border(
+                                width = 1.2.dp,
+                                color = dockBorderColor,
+                                shape = RoundedCornerShape(dockCornerRadius)
+                            )
+                        } else {
+                            Modifier
+                        }
                     )
                     .onGloballyPositioned { coords ->
                         if (coords.isAttached) {
@@ -578,7 +615,7 @@ fun LauncherBottomDockBar(
                         Text(
                             text = "Uygulamayı sabitlemek için Dock'a sürükleyin",
                             style = MaterialTheme.typography.labelSmall,
-                            color = HnmPalette.TextMuted
+                            color = colors.textMuted
                         )
                     }
                 } else {
@@ -591,16 +628,25 @@ fun LauncherBottomDockBar(
                     ) {
                         visibleDockApps.forEachIndexed { idx, app ->
                             val isThisSlotHovered = isDockDropHovered && hoveredDockIdx == idx
-                            val slotScale by animateFloatAsState(
-                                targetValue = if (isThisSlotHovered) 1.07f else 1f,
-                                animationSpec = HnmMotion.slotHighlightSpring(),
-                                label = "dockSlotScale_$idx"
-                            )
+                            val slotScale = if (isDragging) {
+                                val animated by animateFloatAsState(
+                                    targetValue = if (isThisSlotHovered) 1.07f else 1f,
+                                    animationSpec = HnmMotion.slotHighlightSpring(),
+                                    label = "dockSlotScale_$idx"
+                                )
+                                animated
+                            } else {
+                                1f
+                            }
 
                             Box(
-                                modifier = Modifier.graphicsLayer {
-                                    scaleX = slotScale
-                                    scaleY = slotScale
+                                modifier = if (slotScale != 1f) {
+                                    Modifier.graphicsLayer {
+                                        scaleX = slotScale
+                                        scaleY = slotScale
+                                    }
+                                } else {
+                                    Modifier
                                 },
                                 contentAlignment = Alignment.Center
                             ) {

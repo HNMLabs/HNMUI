@@ -46,7 +46,7 @@ import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
 import com.hnmlabs.hnmui.ui.components.SquircleShape
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
-import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
 
 /**
  * Hem Ana Ekran klasörlerini (yeniden adlandırılabilir) hem de App Library genişletilmiş
@@ -67,6 +67,8 @@ fun FolderModalOverlay(
     onAppLongPress: (AppItem) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = HnmTheme.colors
+
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(animationSpec = HnmMotion.folderSpring()) +
@@ -117,15 +119,21 @@ fun FolderModalOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(HnmPalette.ScrimOverlay)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {
-                        if (isEditableTitle && draftTitle != title) {
-                            onRenameTitle(draftTitle)
-                        }
-                        onDismiss()
+                .background(colors.scrimOverlay)
+                .then(
+                    if (visible) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                if (isEditableTitle && draftTitle != title) {
+                                    onRenameTitle(draftTitle)
+                                }
+                                onDismiss()
+                            }
+                        )
+                    } else {
+                        Modifier
                     }
                 ),
             contentAlignment = Alignment.Center
@@ -134,10 +142,16 @@ fun FolderModalOverlay(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = outerHorizontalPad)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
+                    .then(
+                        if (visible) {
+                            Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {}
+                            )
+                        } else {
+                            Modifier
+                        }
                     ),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -147,9 +161,10 @@ fun FolderModalOverlay(
                         onValueChange = { draftTitle = it },
                         singleLine = true,
                         textStyle = MaterialTheme.typography.headlineLarge.copy(
+                            color = colors.textPrimary,
                             textAlign = TextAlign.Center
                         ),
-                        cursorBrush = SolidColor(HnmPalette.AccentCyan),
+                        cursorBrush = SolidColor(colors.accentCyan),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(
                             onDone = {
@@ -163,6 +178,7 @@ fun FolderModalOverlay(
                     Text(
                         text = title,
                         style = MaterialTheme.typography.headlineLarge,
+                        color = colors.textPrimary,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -187,6 +203,7 @@ fun FolderModalOverlay(
                                 app = app,
                                 iconSize = folderIconDp,
                                 showLabel = if (safeCols >= 7) false else showLabels,
+                                onGlassSurface = true,
                                 cachedIconProvider = cachedIconProvider,
                                 loadIconSuspend = loadIconSuspend,
                                 onClick = { onLaunchApp(app) },

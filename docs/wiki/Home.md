@@ -18,7 +18,7 @@
 ---
 
 ## 🚀 Quick Links / Hızlı Bağlantılar
-- ⬇️ **[Latest APK (`v0.3.3-alpha`)](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.3-alpha.apk)**
+- ⬇️ **[Latest APK (`v0.3.4-alpha`)](https://github.com/HNMLabs/HNMUI/raw/main/releases/HNMUI-v0.3.4-alpha.apk)**
 - 🏷️ **[GitHub Releases](https://github.com/HNMLabs/HNMUI/releases)**
 - 🔒 **[Security Policy (`SECURITY.md`)](https://github.com/HNMLabs/HNMUI/blob/main/SECURITY.md)**
 - 🤝 **[Contributing Guide (`CONTRIBUTING.md`)](https://github.com/HNMLabs/HNMUI/blob/main/CONTRIBUTING.md)**

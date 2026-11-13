@@ -386,6 +386,16 @@ class LauncherViewModel(
         .map { it.customization.useIosStatusBar }
         .distinctUntilChanged()
 
+    val themeModeFlow: Flow<com.hnmlabs.hnmui.model.HnmThemeMode> = uiState
+        .map { it.customization.themeMode }
+        .distinctUntilChanged()
+
+    fun setThemeMode(mode: com.hnmlabs.hnmui.model.HnmThemeMode) {
+        updateCustomization { current ->
+            if (current.themeMode == mode) current else current.copy(themeMode = mode)
+        }
+    }
+
     fun updateDeviceAndPermissionStatus(
         smallestScreenWidthDp: Int,
         targetRefreshRateHz: Int,

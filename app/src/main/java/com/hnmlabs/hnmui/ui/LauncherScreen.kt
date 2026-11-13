@@ -71,26 +71,116 @@ import com.hnmlabs.hnmui.ui.surfaces.AppLibraryPage
 import com.hnmlabs.hnmui.ui.surfaces.HomeGridPage
 import com.hnmlabs.hnmui.ui.surfaces.LauncherBottomDockBar
 import com.hnmlabs.hnmui.ui.surfaces.TodayViewPage
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
 import com.hnmlabs.hnmui.widget.LauncherWidgetHostManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.max
 
-private val RootScrimBrush = Brush.verticalGradient(
-    colorStops = arrayOf(
-        0.0f to Color(0x3D070B14),
-        0.22f to Color(0x12070B14),
-        0.78f to Color(0x16070B14),
-        1.0f to Color(0x4D070B14)
-    )
-)
+/**
+ * Kök aşağı çekme hareketinin tetikleyeceği hedef katman.
+ */
+internal enum class DownwardPullAction {
+    NONE,
+    ABORT,
+    OPEN_CONTROL_CENTER,
+    OPEN_NOTIFICATION_CENTER,
+    OPEN_SPOTLIGHT
+}
+
+/**
+ * Tek elle sağ başparmak yaylarını (diyagonal sol-aşağı kavis), kamera delikli (cutout) uzun
+ * ekranları ve tüm sayfalardaki üst durum çubuğu çekişlerini kaçırmadan sınıflandıran saf karar motoru.
+ */
+internal fun classifyDownwardPull(
+    startX: Float,
+    startY: Float,
+    dx: Float,
+    dy: Float,
+    rootWidthPx: Float,
+    rootHeightPx: Float,
+    effectiveTopStripPx: Float,
+    topPullThresholdPx: Float,
+    homePullThresholdPx: Float,
+    spotlightThresholdPx: Float,
+    touchSlopPx: Float,
+    isOnHomePages: Boolean,
+    isEditMode: Boolean
+): DownwardPullAction {
+    val absDx = abs(dx)
+    val absDy = abs(dy)
+
+    // Yukarı doğru belirgin sürükleme aşağı çekme hareketini iptal eder
+    if (dy < -touchSlopPx) {
+        return DownwardPullAction.ABORT
+    }
+
+    // 1) Üst Durum Çubuğu & Kamera Çentiği Şeridi (Today View, Ana Ekran, App Library ve Düzenleme dahil TÜM sayfalarda aktif!)
+    if (startY <= effectiveTopStripPx) {
+        if (absDx > touchSlopPx * 2.8f && absDx > absDy * 2.0f) {
+            return DownwardPullAction.ABORT
+        }
+        if (dy >= topPullThresholdPx && dy > absDx * 0.38f) {
+            return if (startX >= rootWidthPx * 0.48f) {
+                DownwardPullAction.OPEN_CONTROL_CENTER
+            } else {
+                DownwardPullAction.OPEN_NOTIFICATION_CENTER
+            }
+        }
+        return DownwardPullAction.NONE
+    }
+
+    // 2) Ana ekran sayfalarında ergonomik tek-el Denetim Merkezi, Bildirim Merkezi ve Spotlight bölgeleri
+    if (!isOnHomePages || isEditMode) {
+        return DownwardPullAction.ABORT
+    }
+
+    // Yalnızca açıkça yatay sayfa kaydırma baskınsa HorizontalPager'a devret (sağ başparmak yayını erken kesme!)
+    if (absDx > touchSlopPx * 2.6f && absDx > absDy * 1.85f) {
+        return DownwardPullAction.ABORT
+    }
+
+    // Sağ yarı üst & orta-sağ başparmak bölgesi -> Denetim Merkezi (%100 tutarlı açılış)
+    val inRightControlZone = (startY <= rootHeightPx * 0.48f && startX >= rootWidthPx * 0.48f) ||
+        (startY <= rootHeightPx * 0.68f && startX >= rootWidthPx * 0.58f)
+    if (inRightControlZone) {
+        if (dy >= homePullThresholdPx && dy > absDx * 0.42f) {
+            return DownwardPullAction.OPEN_CONTROL_CENTER
+        }
+        return DownwardPullAction.NONE
+    }
+
+    // Sol yarı üst & orta-sol başparmak bölgesi -> Bildirim Merkezi
+    val inLeftNotificationZone = (startY <= rootHeightPx * 0.48f && startX < rootWidthPx * 0.48f) ||
+        (startY <= rootHeightPx * 0.60f && startX <= rootWidthPx * 0.36f)
+    if (inLeftNotificationZone) {
+        if (dy >= homePullThresholdPx && dy > absDx * 0.42f) {
+            return DownwardPullAction.OPEN_NOTIFICATION_CENTER
+        }
+        return DownwardPullAction.NONE
+    }
+
+    // Merkez / alt-orta bölge -> Spotlight Arama
+    if (startY < rootHeightPx * 0.84f) {
+        if (dy >= spotlightThresholdPx && dy > absDx * 0.65f) {
+            return DownwardPullAction.OPEN_SPOTLIGHT
+        }
+        return DownwardPullAction.NONE
+    }
+
+    return DownwardPullAction.ABORT
+}
 
 /**
  * HNMUI kök uzamsal ekranı.
  * Yatay düzlem: [0: Today View] <-> [1..N: Ana Ekran Sayfaları (4x4..7x7)] <-> [N+1: App Library]
- * Üst çekme bölgeleri: Sağ Üst -> Denetim Merkezi | Sol Üst -> HNM Bildirim Merkezi | Orta -> Spotlight
+ * Üst çekme bölgeleri: Sağ Üst / Sağ Yarı -> Denetim Merkezi | Sol Üst / Sol Yarı -> HNM Bildirim Merkezi | Orta -> Spotlight
  * Katman düzlemi: iOS Durum Çubuğu, 120 FPS Sürükle-Bırak (Izgara + Klasör + Dock), HNM Ayarlar.
  */
 @Composable
@@ -102,6 +192,7 @@ fun LauncherScreen(
     onRemoveHostedWidget: (Int) -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val colors = HnmTheme.colors
     val context = LocalContext.current
     val density = LocalDensity.current
     val rawHaptics = LocalHapticFeedback.current
@@ -116,6 +207,21 @@ fun LauncherScreen(
     }
     val coroutineScope = rememberCoroutineScope()
     val dragController = rememberLauncherDragDropController()
+
+    val rootScrimBrush = remember(
+        colors.wallpaperScrimTop,
+        colors.wallpaperScrimMid,
+        colors.wallpaperScrimBottom
+    ) {
+        Brush.verticalGradient(
+            colorStops = arrayOf(
+                0.0f to colors.wallpaperScrimTop,
+                0.24f to colors.wallpaperScrimMid,
+                0.76f to colors.wallpaperScrimMid,
+                1.0f to colors.wallpaperScrimBottom
+            )
+        )
+    }
 
     val homePageCount = state.homePages.size.coerceAtLeast(1)
     val totalPages = 1 + homePageCount + 1
@@ -249,11 +355,15 @@ fun LauncherScreen(
         null
     }
 
-    val topStripPx = remember(density) { with(density) { 62.dp.toPx() } }
-    val topPullThresholdPx = remember(density) { with(density) { 24.dp.toPx() } }
-    val homeTopZoneThresholdPx = remember(density) { with(density) { 28.dp.toPx() } }
-    val spotlightThresholdPx = remember(density) { with(density) { 36.dp.toPx() } }
+    val cutoutTopDp = WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
+    val effectiveTopStripPx = remember(density, cutoutTopDp) {
+        with(density) { max((cutoutTopDp + 52.dp).toPx(), 86.dp.toPx()) }
+    }
+    val topPullThresholdPx = remember(density) { with(density) { 14.dp.toPx() } }
+    val homeTopZoneThresholdPx = remember(density) { with(density) { 20.dp.toPx() } }
+    val spotlightThresholdPx = remember(density) { with(density) { 28.dp.toPx() } }
 
+    val latestTopStripPx by rememberUpdatedState(effectiveTopStripPx)
     val latestAnyOverlayOpen by rememberUpdatedState(anyOverlayOpen)
     val latestIsOnHomePages by rememberUpdatedState(isOnHomeScreenPages)
     val latestIsEditMode by rememberUpdatedState(state.isEditMode)
@@ -292,7 +402,7 @@ fun LauncherScreen(
     CompositionLocalProvider(
         LocalHapticFeedback provides haptics,
         LocalGlassOpacityFactor provides state.gridSpec.glassOpacityFactor,
-        LocalHnmTopBarHeight provides if (state.customization.useIosStatusBar) 38.dp else 0.dp,
+        LocalHnmTopBarHeight provides if (state.customization.useIosStatusBar) 42.dp else 0.dp,
         LocalEditJigglePhase provides sharedJigglePhaseState
     ) {
         Box(
@@ -302,7 +412,7 @@ fun LauncherScreen(
                     rootWidthPx = it.width.toFloat().coerceAtLeast(1f)
                     rootHeightPx = it.height.toFloat().coerceAtLeast(1f)
                 }
-                .background(RootScrimBrush)
+                .background(rootScrimBrush)
                 // Kök Initial-pass aşağı çekme yakalayıcısı: HorizontalPager ve ikonlardan ÖNCE çalışır!
                 .pointerInput(Unit) {
                     val touchSlop = viewConfiguration.touchSlop
@@ -319,74 +429,60 @@ fun LauncherScreen(
 
                         val startX = down.position.x
                         val startY = down.position.y
-                        var aborted = false
+                        var triggered = false
 
-                        while (!aborted) {
+                        while (true) {
                             val event = awaitPointerEvent(pass = PointerEventPass.Initial)
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) break
 
-                            if (latestAnyOverlayOpen || dragController.isDragging) {
-                                aborted = true
-                                break
-                            }
-
-                            val dx = change.position.x - startX
-                            val dy = change.position.y - startY
-
-                            if (dy < -touchSlop) {
-                                aborted = true
-                                break
-                            }
-
-                            // 1) En üst iOS durum çubuğu şeridi (tüm sayfalarda çalışır)
-                            if (startY <= topStripPx) {
-                                if (abs(dx) > touchSlop * 1.6f && abs(dx) > abs(dy) * 1.4f) {
-                                    aborted = true
-                                    break
-                                }
-                                if (dy >= topPullThresholdPx && dy > abs(dx) * 0.50f) {
-                                    event.changes.forEach { it.consume() }
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    if (startX >= rootWidthPx * 0.50f) {
-                                        viewModel.openControlCenter()
-                                    } else {
-                                        viewModel.openNotificationCenter()
-                                    }
-                                    break
-                                }
+                            if (triggered) {
+                                // Katman açıldıktan sonra parmak kalkana kadar kalan olayları tüket;
+                                // böylece alt ikon tıklaması veya yeni açılan panelin kapanması asla tetiklenmez!
+                                event.changes.forEach { it.consume() }
                                 continue
                             }
 
-                            // 2) Ana ekran sayfalarında üst-sağ / üst-sol ve orta Spotlight çekme bölgeleri
-                            if (!latestIsOnHomePages || latestIsEditMode) {
-                                aborted = true
+                            if (latestAnyOverlayOpen || dragController.isDragging) {
                                 break
                             }
 
-                            if (abs(dx) > touchSlop * 1.35f && abs(dx) > abs(dy) * 1.25f) {
-                                aborted = true
-                                break
-                            }
+                            val action = classifyDownwardPull(
+                                startX = startX,
+                                startY = startY,
+                                dx = change.position.x - startX,
+                                dy = change.position.y - startY,
+                                rootWidthPx = rootWidthPx,
+                                rootHeightPx = rootHeightPx,
+                                effectiveTopStripPx = latestTopStripPx,
+                                topPullThresholdPx = topPullThresholdPx,
+                                homePullThresholdPx = homeTopZoneThresholdPx,
+                                spotlightThresholdPx = spotlightThresholdPx,
+                                touchSlopPx = touchSlop,
+                                isOnHomePages = latestIsOnHomePages,
+                                isEditMode = latestIsEditMode
+                            )
 
-                            val isUpperHalf = startY <= rootHeightPx * 0.44f
-                            if (isUpperHalf) {
-                                if (dy >= homeTopZoneThresholdPx && dy > abs(dx) * 0.55f) {
+                            when (action) {
+                                DownwardPullAction.NONE -> continue
+                                DownwardPullAction.ABORT -> break
+                                DownwardPullAction.OPEN_CONTROL_CENTER -> {
+                                    triggered = true
                                     event.changes.forEach { it.consume() }
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    if (startX >= rootWidthPx * 0.50f) {
-                                        viewModel.openControlCenter()
-                                    } else {
-                                        viewModel.openNotificationCenter()
-                                    }
-                                    break
+                                    viewModel.openControlCenter()
                                 }
-                            } else if (startY < rootHeightPx * 0.84f) {
-                                if (dy >= spotlightThresholdPx && dy > abs(dx) * 1.05f) {
+                                DownwardPullAction.OPEN_NOTIFICATION_CENTER -> {
+                                    triggered = true
+                                    event.changes.forEach { it.consume() }
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    viewModel.openNotificationCenter()
+                                }
+                                DownwardPullAction.OPEN_SPOTLIGHT -> {
+                                    triggered = true
                                     event.changes.forEach { it.consume() }
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     viewModel.openSpotlight()
-                                    break
                                 }
                             }
                         }
@@ -577,7 +673,9 @@ fun LauncherScreen(
             // Sağ üstten aşağı kaydırma ile açılan iOS Denetim Merkezi (Control Center)
             ControlCenterOverlay(
                 visible = state.isControlCenterOpen,
+                themeMode = state.customization.themeMode,
                 allApps = state.allApps,
+                onSetThemeMode = viewModel::setThemeMode,
                 onOpenNotificationCenter = viewModel::openNotificationCenter,
                 onOpenHnmSettings = viewModel::openHnmSettings,
                 onLaunchApp = viewModel::launchApp,
