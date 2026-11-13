@@ -445,6 +445,189 @@ class LauncherCoreTest {
         assertEquals(listOf(spotify), mediaGroup.apps)
     }
 
+    @Test
+    fun `adaptive theme mode resolves system, light and dark palettes and preserves backwards-compatible JSON`() {
+        assertTrue(com.hnmlabs.hnmui.ui.theme.resolveIsDarkTheme(com.hnmlabs.hnmui.model.HnmThemeMode.SYSTEM, systemDark = true))
+        assertFalse(com.hnmlabs.hnmui.ui.theme.resolveIsDarkTheme(com.hnmlabs.hnmui.model.HnmThemeMode.SYSTEM, systemDark = false))
+        assertFalse(com.hnmlabs.hnmui.ui.theme.resolveIsDarkTheme(com.hnmlabs.hnmui.model.HnmThemeMode.LIGHT, systemDark = true))
+        assertTrue(com.hnmlabs.hnmui.ui.theme.resolveIsDarkTheme(com.hnmlabs.hnmui.model.HnmThemeMode.DARK, systemDark = false))
+
+        assertEquals(
+            com.hnmlabs.hnmui.model.HnmThemeMode.LIGHT,
+            com.hnmlabs.hnmui.model.HnmThemeMode.SYSTEM.nextMode()
+        )
+        assertEquals(
+            com.hnmlabs.hnmui.model.HnmThemeMode.DARK,
+            com.hnmlabs.hnmui.model.HnmThemeMode.LIGHT.nextMode()
+        )
+        assertEquals(
+            com.hnmlabs.hnmui.model.HnmThemeMode.SYSTEM,
+            com.hnmlabs.hnmui.model.HnmThemeMode.DARK.nextMode()
+        )
+
+        // Geriye dönük uyumluluk: v0.3.3 ve öncesi JSON kaydında themeMode alanı yoksa otomatik SYSTEM çözümlenmeli
+        val json = kotlinx.serialization.json.Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
+        val legacyJson = """{"customization":{"gridColumns":5,"gridRows":6}}"""
+        val decodedLegacy = json.decodeFromString(
+            com.hnmlabs.hnmui.model.PersistedHomeState.serializer(),
+            legacyJson
+        )
+        assertEquals(com.hnmlabs.hnmui.model.HnmThemeMode.SYSTEM, decodedLegacy.customization.themeMode)
+        assertEquals(5, decodedLegacy.customization.gridColumns)
+
+        // Açık mod (LIGHT) kalıcılığı ve renk kontrast doğrulaması
+        val lightState = decodedLegacy.copy(
+            customization = decodedLegacy.customization.copy(
+                themeMode = com.hnmlabs.hnmui.model.HnmThemeMode.LIGHT
+            )
+        )
+        val roundTripped = json.decodeFromString(
+            com.hnmlabs.hnmui.model.PersistedHomeState.serializer(),
+            json.encodeToString(com.hnmlabs.hnmui.model.PersistedHomeState.serializer(), lightState)
+        )
+        assertEquals(com.hnmlabs.hnmui.model.HnmThemeMode.LIGHT, roundTripped.customization.themeMode)
+        assertTrue(com.hnmlabs.hnmui.ui.theme.DarkHnmColors.isDark)
+        assertFalse(com.hnmlabs.hnmui.ui.theme.LightHnmColors.isDark)
+        org.junit.Assert.assertNotEquals(
+            com.hnmlabs.hnmui.ui.theme.DarkHnmColors.textPrimary,
+            com.hnmlabs.hnmui.ui.theme.LightHnmColors.textPrimary
+        )
+    }
+
+    @Test
+    fun `downward pull classifier opens Control Center reliably across cutout strips, diagonal thumb arcs and mid-right home zone`() {
+        val w = 1080f
+        val h = 2400f
+        val topStrip = 128f // Kamera delikli (punch-hole) üst şerit
+        val topPull = 42f
+        val homePull = 72f
+        val spotlightPull = 96f
+        val slop = 24f
+
+        // 1) Sağ üst durum çubuğu / kamera çentiği çekişi Today View, Ana Ekran, App Library ve Düzenleme Modunda dahi %100 açılmalı
+        assertEquals(
+            com.hnmlabs.hnmui.ui.DownwardPullAction.OPEN_CONTROL_CENTER,
+            com.hnmlabs.hnmui.ui.classifyDownwardPull(
+                startX = w * 0.78f,
+                startY = 96f,
+                dx = -28f,
+                dy = 48f,
+                rootWidthPx = w,
+                rootHeightPx = h,
+                effectiveTopStripPx = topStrip,
+                topPullThresholdPx = topPull,
+                homePullThresholdPx = homePull,
+                spotlightThresholdPx = spotlightPull,
+                touchSlopPx = slop,
+                isOnHomePages = false, // Today View veya App Library sayfasında bile çalışmalı!
+                isEditMode = true
+            )
+        )
+
+        // 2) Sol üst durum çubuğu çekişi -> Bildirim Merkezi
+        assertEquals(
+            com.hnmlabs.hnmui.ui.DownwardPullAction.OPEN_NOTIFICATION_CENTER,
+            com.hnmlabs.hnmui.ui.classifyDownwardPull(
+                startX = w * 0.22f,
+                startY = 60f,
+                dx = 14f,
+                dy = 46f,
+                rootWidthPx = w,
+                rootHeightPx = h,
+                effectiveTopStripPx = topStrip,
+                topPullThresholdPx = topPull,
+                homePullThresholdPx = homePull,
+                spotlightThresholdPx = spotlightPull,
+                touchSlopPx = slop,
+                isOnHomePages = false,
+                isEditMode = false
+            )
+        )
+
+        // 3) Doğal sağ başparmak kavisi (sola-aşağı diyagonal çekiş: dx = -44px, dy = 78px) kesilmemeli -> Denetim Merkezi!
+        assertEquals(
+            com.hnmlabs.hnmui.ui.DownwardPullAction.OPEN_CONTROL_CENTER,
+            com.hnmlabs.hnmui.ui.classifyDownwardPull(
+                startX = w * 0.82f,
+                startY = h * 0.34f,
+                dx = -44f,
+                dy = 78f,
+                rootWidthPx = w,
+                rootHeightPx = h,
+                effectiveTopStripPx = topStrip,
+                topPullThresholdPx = topPull,
+                homePullThresholdPx = homePull,
+                spotlightThresholdPx = spotlightPull,
+                touchSlopPx = slop,
+                isOnHomePages = true,
+                isEditMode = false
+            )
+        )
+
+        // 4) Tek elle erişim için orta-sağ bölge (y = %62 ekran yüksekliği) -> Denetim Merkezi
+        assertEquals(
+            com.hnmlabs.hnmui.ui.DownwardPullAction.OPEN_CONTROL_CENTER,
+            com.hnmlabs.hnmui.ui.classifyDownwardPull(
+                startX = w * 0.72f,
+                startY = h * 0.62f,
+                dx = -18f,
+                dy = 80f,
+                rootWidthPx = w,
+                rootHeightPx = h,
+                effectiveTopStripPx = topStrip,
+                topPullThresholdPx = topPull,
+                homePullThresholdPx = homePull,
+                spotlightThresholdPx = spotlightPull,
+                touchSlopPx = slop,
+                isOnHomePages = true,
+                isEditMode = false
+            )
+        )
+
+        // 5) Ana ekran orta-alt bölge -> Spotlight Arama
+        assertEquals(
+            com.hnmlabs.hnmui.ui.DownwardPullAction.OPEN_SPOTLIGHT,
+            com.hnmlabs.hnmui.ui.classifyDownwardPull(
+                startX = w * 0.50f,
+                startY = h * 0.56f,
+                dx = 8f,
+                dy = 104f,
+                rootWidthPx = w,
+                rootHeightPx = h,
+                effectiveTopStripPx = topStrip,
+                topPullThresholdPx = topPull,
+                homePullThresholdPx = homePull,
+                spotlightThresholdPx = spotlightPull,
+                touchSlopPx = slop,
+                isOnHomePages = true,
+                isEditMode = false
+            )
+        )
+
+        // 6) Belirgin yatay sayfa kaydırma hareketi HorizontalPager'a bırakılmalı (ABORT)
+        assertEquals(
+            com.hnmlabs.hnmui.ui.DownwardPullAction.ABORT,
+            com.hnmlabs.hnmui.ui.classifyDownwardPull(
+                startX = w * 0.75f,
+                startY = h * 0.40f,
+                dx = -110f,
+                dy = 14f,
+                rootWidthPx = w,
+                rootHeightPx = h,
+                effectiveTopStripPx = topStrip,
+                topPullThresholdPx = topPull,
+                homePullThresholdPx = homePull,
+                spotlightThresholdPx = spotlightPull,
+                touchSlopPx = slop,
+                isOnHomePages = true,
+                isEditMode = false
+            )
+        )
+    }
+
     private fun sampleApp(pkg: String, label: String, category: AppCategory): AppItem {
         return AppItem(
             key = AppComponentKey(packageName = pkg, className = "$pkg.MainActivity"),

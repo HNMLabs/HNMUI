@@ -121,8 +121,32 @@ data class QuickNoteItem(
 )
 
 /**
+ * HNMUI profesyonel sistem görünüm modu:
+ * - SYSTEM: Android sistem Koyu / Açık modunu canlı takip eder (varsayılan)
+ * - LIGHT: Gün Işığı Sedefli Cam (Daylight Pearlescent Glass)
+ * - DARK: Gece Yarısı Buzlu Cam (Midnight Frosted Glass)
+ */
+@Serializable
+enum class HnmThemeMode(val titleTr: String, val shortTitleTr: String) {
+    @SerialName("system")
+    SYSTEM(titleTr = "Sistem ile Uyumlu", shortTitleTr = "Otomatik"),
+
+    @SerialName("light")
+    LIGHT(titleTr = "Açık Mod", shortTitleTr = "Açık"),
+
+    @SerialName("dark")
+    DARK(titleTr = "Koyu Mod", shortTitleTr = "Koyu");
+
+    fun nextMode(): HnmThemeMode = when (this) {
+        SYSTEM -> LIGHT
+        LIGHT -> DARK
+        DARK -> SYSTEM
+    }
+}
+
+/**
  * Kullanıcının HNM Ayarlar içerisinden değiştirebildiği minimalist arayüz,
- * ızgara (7x7'ye kadar), klasör ve Dock özelleştirme tercihleri.
+ * ızgara (7x7'ye kadar), klasör, Dock ve görünüm modu tercihleri.
  */
 @Immutable
 @Serializable
@@ -139,7 +163,8 @@ data class LauncherCustomizationSettings(
     val glassOpacityPercent: Int = 100,
     val interceptSystemSettingsApp: Boolean = true,
     val hapticFeedbackEnabled: Boolean = true,
-    val useIosStatusBar: Boolean = true
+    val useIosStatusBar: Boolean = true,
+    val themeMode: HnmThemeMode = HnmThemeMode.SYSTEM
 )
 
 /**

@@ -13,8 +13,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -26,6 +28,7 @@ import com.hnmlabs.hnmui.core.system.HighRefreshRateHelper
 import com.hnmlabs.hnmui.ui.LauncherScreen
 import com.hnmlabs.hnmui.ui.LauncherViewModel
 import com.hnmlabs.hnmui.ui.theme.HnmLauncherTheme
+import com.hnmlabs.hnmui.ui.theme.resolveIsDarkTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,8 +36,8 @@ import kotlinx.coroutines.withContext
 /**
  * HNMUI Ana Ekran (CATEGORY_HOME) Aktivitesi.
  * 120Hz yüksek yenileme hızı kilidi, duvar kağıdı destekli uçtan uca pencere,
- * One UI üst durum çubuğunu gizleyip iOS durum çubuğu sunma modu
- * ve varsayılan Ana Ekran (RoleManager.ROLE_HOME) geçiş akışını yönetir.
+ * One UI üst durum çubuğunu gizleyip iOS durum çubuğu sunma modu,
+ * canlı Açık / Koyu sistem görünümü geçişi ve varsayılan Ana Ekran akışını yönetir.
  */
 class LauncherActivity : ComponentActivity() {
 
@@ -51,6 +54,12 @@ class LauncherActivity : ComponentActivity() {
 
     private var pendingAppWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID
     private var explicitUserRoleTap: Boolean = false
+
+    private val rehideTransientStatusBarRunnable = Runnable {
+        if (!isFinishing && !isDestroyed && viewModel.uiState.value.customization.useIosStatusBar) {
+            applySystemStatusBarPolicy(hideForIosBar = true)
+        }
+    }
 
     private val defaultLauncherRoleLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -124,6 +133,16 @@ class LauncherActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
 
+        ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { view, insets ->
+            if (viewModel.uiState.value.customization.useIosStatusBar &&
+                insets.isVisible(WindowInsetsCompat.Type.statusBars())
+            ) {
+                view.removeCallbacks(rehideTransientStatusBarRunnable)
+                view.postDelayed(rehideTransientStatusBarRunnable, 1_600L)
+            }
+            ViewCompat.onApplyWindowInsets(view, insets)
+        }
+
         applySystemStatusBarPolicy(hideForIosBar = viewModel.uiState.value.customization.useIosStatusBar)
         syncDeviceAndPermissionStateAsync { isDefault ->
             // İlk açılışta HNMUI henüz varsayılan Ana Ekran değilse sistem seçim penceresini otomatik sun
@@ -137,11 +156,20 @@ class LauncherActivity : ComponentActivity() {
             val useIosStatusBar by viewModel.useIosStatusBarFlow.collectAsStateWithLifecycle(
                 initialValue = viewModel.uiState.value.customization.useIosStatusBar
             )
-            LaunchedEffect(useIosStatusBar) {
-                applySystemStatusBarPolicy(hideForIosBar = useIosStatusBar)
+            val themeMode by viewModel.themeModeFlow.collectAsStateWithLifecycle(
+                initialValue = viewModel.uiState.value.customization.themeMode
+            )
+            val systemDark = isSystemInDarkTheme()
+            val effectiveDark = resolveIsDarkTheme(mode = themeMode, systemDark = systemDark)
+
+            LaunchedEffect(useIosStatusBar, effectiveDark) {
+                applySystemStatusBarPolicy(
+                    hideForIosBar = useIosStatusBar,
+                    isDarkTheme = effectiveDark
+                )
             }
 
-            HnmLauncherTheme {
+            HnmLauncherTheme(themeMode = themeMode) {
                 LauncherScreen(
                     viewModel = viewModel,
                     widgetHostManager = app.widgetHostManager,
@@ -179,12 +207,21 @@ class LauncherActivity : ComponentActivity() {
         app.installedAppsRepository.refreshAppsAsync(force = false)
     }
 
-    private fun applySystemStatusBarPolicy(hideForIosBar: Boolean) {
+    private fun applySystemStatusBarPolicy(
+        hideForIosBar: Boolean,
+        isDarkTheme: Boolean? = null
+    ) {
         val applyNow = {
             runCatching {
                 val controller = WindowCompat.getInsetsController(window, window.decorView)
                 controller.systemBarsBehavior =
                     WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                if (isDarkTheme != null) {
+                    controller.isAppearanceLightNavigationBars = !isDarkTheme
+                    if (!hideForIosBar) {
+                        controller.isAppearanceLightStatusBars = !isDarkTheme
+                    }
+                }
                 if (hideForIosBar) {
                     controller.hide(WindowInsetsCompat.Type.statusBars())
                 } else {
@@ -200,6 +237,7 @@ class LauncherActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        window.decorView.removeCallbacks(rehideTransientStatusBarRunnable)
         app.widgetHostManager.stopListening()
         super.onStop()
     }

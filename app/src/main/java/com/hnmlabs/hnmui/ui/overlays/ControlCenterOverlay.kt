@@ -37,11 +37,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AirplanemodeActive
 import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.BrightnessHigh
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CellTower
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.FlashlightOn
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.ScreenLockPortrait
 import androidx.compose.material.icons.rounded.Settings
@@ -80,14 +83,15 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hnmlabs.hnmui.core.system.ConnectivitySnapshot
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
-import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.model.AppItem
+import com.hnmlabs.hnmui.model.HnmThemeMode
 import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
 import com.hnmlabs.hnmui.ui.components.SquircleShape
 import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -95,12 +99,14 @@ import kotlinx.coroutines.withContext
 /**
  * Ana ekranda sağ üstten aşağı çekildiğinde açılan iOS tarzı buzlu cam Denetim Merkezi.
  * One UI bildirim/kontrol ekranına ihtiyaç duymadan parlaklık, ses, el feneri,
- * döndürme kilidi, medya oynatıcı ve bağlantı kısayollarını yönetir.
+ * döndürme kilidi, canlı Koyu/Açık görünüm geçişi, medya oynatıcı ve bağlantı kısayollarını yönetir.
  */
 @Composable
 fun ControlCenterOverlay(
     visible: Boolean,
+    themeMode: HnmThemeMode,
     allApps: List<AppItem>,
+    onSetThemeMode: (HnmThemeMode) -> Unit,
     onOpenNotificationCenter: () -> Unit,
     onOpenHnmSettings: () -> Unit,
     onLaunchApp: (AppItem) -> Unit,
@@ -109,6 +115,7 @@ fun ControlCenterOverlay(
     val context = LocalContext.current
     val activity = context as? Activity
     val haptics = LocalHapticFeedback.current
+    val colors = HnmTheme.colors
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
     val currentOnDismiss by rememberUpdatedState(onDismiss)
@@ -190,10 +197,9 @@ fun ControlCenterOverlay(
             ) +
             scaleOut(targetScale = 0.96f, animationSpec = HnmMotion.sheetSpring())
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xB8080D18))
+        // Kapanış animasyonu sürerken dokunma olaylarını anında serbest bırak (tekrar açılışta 0 takılma!)
+        val backdropTouchModifier = if (visible) {
+            Modifier
                 .pointerInput(Unit) {
                     var upwardSwipePx = 0f
                     var dismissedInGesture = false
@@ -219,6 +225,25 @@ fun ControlCenterOverlay(
                     indication = null,
                     onClick = onDismiss
                 )
+        } else {
+            Modifier
+        }
+
+        val sheetAbsorbClickModifier = if (visible) {
+            Modifier.clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {}
+            )
+        } else {
+            Modifier
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.controlCenterBackdrop)
+                .then(backdropTouchModifier)
         ) {
             Column(
                 modifier = Modifier
@@ -227,11 +252,7 @@ fun ControlCenterOverlay(
                     .hnmSafeTopPadding()
                     .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 14.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
-                    ),
+                    .then(sheetAbsorbClickModifier),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Row(
@@ -270,7 +291,7 @@ fun ControlCenterOverlay(
                             Icon(
                                 imageVector = Icons.Rounded.Settings,
                                 contentDescription = "Ayarlar",
-                                tint = Color.White,
+                                tint = colors.textPrimary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(text = "Ayarlar", style = MaterialTheme.typography.labelSmall)
@@ -384,7 +405,7 @@ fun ControlCenterOverlay(
                                     Icon(
                                         imageVector = Icons.Rounded.SkipPrevious,
                                         contentDescription = "Önceki",
-                                        tint = Color.White,
+                                        tint = colors.textPrimary,
                                         modifier = Modifier.size(28.dp)
                                     )
                                 }
@@ -393,7 +414,7 @@ fun ControlCenterOverlay(
                                     modifier = Modifier
                                         .size(46.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0x2EFFFFFF))
+                                        .background(colors.controlInactiveFill)
                                         .clickable {
                                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                             DeviceSystemController.dispatchMediaKey(
@@ -406,7 +427,7 @@ fun ControlCenterOverlay(
                                     Icon(
                                         imageVector = Icons.Rounded.PlayArrow,
                                         contentDescription = "Oynat / Duraklat",
-                                        tint = Color.White,
+                                        tint = colors.textPrimary,
                                         modifier = Modifier.size(28.dp)
                                     )
                                 }
@@ -423,7 +444,7 @@ fun ControlCenterOverlay(
                                     Icon(
                                         imageVector = Icons.Rounded.SkipNext,
                                         contentDescription = "Sonraki",
-                                        tint = Color.White,
+                                        tint = colors.textPrimary,
                                         modifier = Modifier.size(28.dp)
                                     )
                                 }
@@ -540,6 +561,83 @@ fun ControlCenterOverlay(
                         )
                     }
                 }
+
+                // Alt Satır: Profesyonel Canlı Görünüm Geçiş Çubuğu (Sistem / Açık / Koyu)
+                GlassSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    tone = GlassTone.ELEVATED_MODAL
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Görünüm Modu",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = if (colors.isDark) "Gece Camı Aktif" else "Gün Işığı Camı Aktif",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.accentCyan
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val modeItems = listOf(
+                                Triple(HnmThemeMode.SYSTEM, "Otomatik", Icons.Rounded.BrightnessAuto),
+                                Triple(HnmThemeMode.LIGHT, "Açık", Icons.Rounded.LightMode),
+                                Triple(HnmThemeMode.DARK, "Koyu", Icons.Rounded.DarkMode)
+                            )
+                            modeItems.forEach { (mode, label, iconVec) ->
+                                val selected = themeMode == mode
+                                val chipBg by animateColorAsState(
+                                    targetValue = if (selected) colors.accentBlue else colors.surfaceSubtleFill,
+                                    animationSpec = HnmMotion.slotHighlightSpring(),
+                                    label = "ccThemeChipBg_${mode.name}"
+                                )
+                                val chipFg = if (selected) Color.White else colors.textSecondary
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(chipBg)
+                                        .clickable {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onSetThemeMode(mode)
+                                        }
+                                        .padding(vertical = 9.dp, horizontal = 6.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = iconVec,
+                                        contentDescription = label,
+                                        tint = chipFg,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.size(5.dp))
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = chipFg,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -552,18 +650,19 @@ private fun ControlCircleButton(
     activeColor: Color,
     onClick: () -> Unit
 ) {
+    val colors = HnmTheme.colors
     Box(
         modifier = Modifier
             .size(54.dp)
             .clip(CircleShape)
-            .background(if (active) activeColor else Color(0x26FFFFFF))
+            .background(if (active) activeColor else colors.controlInactiveFill)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = Color.White,
+            tint = if (active) Color.White else colors.textPrimary,
             modifier = Modifier.size(24.dp)
         )
     }
@@ -577,6 +676,9 @@ private fun QuickToggleTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = HnmTheme.colors
+    val activeTintBg = if (colors.isDark) Color(0x5538BDF8) else Color(0x24007AFF)
+    val activeIconTint = if (colors.isDark) Color.White else colors.accentBlue
     GlassSurface(
         modifier = modifier
             .fillMaxHeight()
@@ -587,7 +689,7 @@ private fun QuickToggleTile(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(if (active) Color(0x5538BDF8) else Color.Transparent)
+                .background(if (active) activeTintBg else Color.Transparent)
                 .padding(8.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
@@ -595,13 +697,14 @@ private fun QuickToggleTile(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = if (active) Color.White else HnmPalette.TextPrimary,
+                tint = if (active) activeIconTint else colors.textPrimary,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
+                color = if (active && !colors.isDark) colors.accentBlue else colors.textPrimary,
                 maxLines = 1
             )
         }
@@ -615,6 +718,7 @@ private fun VerticalGlassSlider(
     onFractionChange: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = HnmTheme.colors
     var heightPx by remember { mutableFloatStateOf(1f) }
     val currentOnFractionChange by rememberUpdatedState(onFractionChange)
     val safeFraction = if (fraction.isFinite()) fraction else 0.5f
@@ -639,18 +743,22 @@ private fun VerticalGlassSlider(
         shape = RoundedCornerShape(28.dp),
         tone = GlassTone.ELEVATED_MODAL
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.surfaceSubtleFill)
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(clamped)
                     .align(Alignment.BottomCenter)
-                    .background(Color(0xCCFFFFFF))
+                    .background(colors.verticalSliderFill)
             )
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (clamped > 0.24f) Color(0xFF0F172A) else Color.White,
+                tint = if (clamped > 0.24f) colors.verticalSliderIconActive else colors.verticalSliderIconIdle,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 16.dp)

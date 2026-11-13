@@ -83,7 +83,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hnmlabs.hnmui.core.system.BatterySnapshot
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
-import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.LiveNotificationCard
@@ -96,6 +95,7 @@ import com.hnmlabs.hnmui.ui.components.SquircleShape
 import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -131,6 +131,7 @@ fun NotificationCenterOverlay(
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
+    val colors = HnmTheme.colors
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
     val currentOnDismiss by rememberUpdatedState(onDismiss)
@@ -177,6 +178,25 @@ fun NotificationCenterOverlay(
     val appByPackage = remember(allApps) {
         allApps.associateBy { it.key.packageName }
     }
+    val cameraApp = remember(allApps) {
+        allApps.firstOrNull {
+            it.asciiPackage.contains("camera") || it.foldedLabel.contains("kamera")
+        }
+    }
+
+    val coverBackdropBrush = remember(
+        colors.coverSheetTop,
+        colors.coverSheetMiddle,
+        colors.coverSheetBottom
+    ) {
+        Brush.verticalGradient(
+            colors = listOf(
+                colors.coverSheetTop,
+                colors.coverSheetMiddle,
+                colors.coverSheetBottom
+            )
+        )
+    }
 
     AnimatedVisibility(
         visible = visible,
@@ -193,38 +213,36 @@ fun NotificationCenterOverlay(
             ) +
             scaleOut(targetScale = 0.97f, animationSpec = HnmMotion.sheetSpring())
     ) {
+        val dismissGestureModifier = if (visible) {
+            Modifier.pointerInput(Unit) {
+                var upwardDragPx = 0f
+                var dismissedInGesture = false
+                detectVerticalDragGestures(
+                    onDragStart = {
+                        upwardDragPx = 0f
+                        dismissedInGesture = false
+                    },
+                    onVerticalDrag = { change, dragAmount ->
+                        if (!change.isConsumed && !dismissedInGesture) {
+                            upwardDragPx += dragAmount
+                            if (upwardDragPx < -90f) {
+                                dismissedInGesture = true
+                                change.consume()
+                                currentOnDismiss()
+                            }
+                        }
+                    }
+                )
+            }
+        } else {
+            Modifier
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xCC070C17),
-                            Color(0xDB090F1D),
-                            Color(0xEB070B14)
-                        )
-                    )
-                )
-                .pointerInput(Unit) {
-                    var upwardDragPx = 0f
-                    var dismissedInGesture = false
-                    detectVerticalDragGestures(
-                        onDragStart = {
-                            upwardDragPx = 0f
-                            dismissedInGesture = false
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            if (!change.isConsumed && !dismissedInGesture) {
-                                upwardDragPx += dragAmount
-                                if (upwardDragPx < -90f) {
-                                    dismissedInGesture = true
-                                    change.consume()
-                                    currentOnDismiss()
-                                }
-                            }
-                        }
-                    )
-                }
+                .background(coverBackdropBrush)
+                .then(dismissGestureModifier)
         ) {
             Column(
                 modifier = Modifier
@@ -296,7 +314,7 @@ fun NotificationCenterOverlay(
                 )
                 Text(
                     text = now.format(clockFmt),
-                    color = Color.White,
+                    color = colors.textPrimary,
                     fontSize = 64.sp,
                     fontWeight = FontWeight.Light,
                     letterSpacing = (-1.5).sp,
@@ -326,7 +344,7 @@ fun NotificationCenterOverlay(
                                     Icons.Rounded.BatteryStd
                                 },
                                 contentDescription = null,
-                                tint = if (battery.isCharging) HnmPalette.SuccessGreen else Color.White,
+                                tint = if (battery.isCharging) HnmPalette.SuccessGreen else colors.textPrimary,
                                 modifier = Modifier.size(15.dp)
                             )
                             Text(
@@ -450,13 +468,13 @@ fun NotificationCenterOverlay(
                                             modifier = Modifier
                                                 .size(40.dp)
                                                 .clip(SquircleShape.Icon)
-                                                .background(Color(0x2EFFFFFF)),
+                                                .background(colors.controlInactiveFill),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Rounded.NotificationsNone,
                                                 contentDescription = null,
-                                                tint = Color.White,
+                                                tint = colors.textPrimary,
                                                 modifier = Modifier.size(20.dp)
                                             )
                                         }
@@ -530,7 +548,7 @@ fun NotificationCenterOverlay(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(14.dp))
-                                        .background(Color(0x1FFFFFFF))
+                                        .background(colors.surfaceSubtleFill)
                                         .padding(horizontal = 12.dp, vertical = 9.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -548,7 +566,7 @@ fun NotificationCenterOverlay(
                                             onValueChange = { draftNote = it },
                                             singleLine = true,
                                             textStyle = MaterialTheme.typography.bodySmall.copy(
-                                                color = Color.White
+                                                color = colors.textPrimary
                                             ),
                                             cursorBrush = SolidColor(HnmPalette.AccentCyan),
                                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -622,7 +640,7 @@ fun NotificationCenterOverlay(
                                             color = if (note.isDone) {
                                                 HnmPalette.TextMuted
                                             } else {
-                                                Color.White
+                                                colors.textPrimary
                                             },
                                             modifier = Modifier.weight(1f),
                                             maxLines = 2,
@@ -670,6 +688,7 @@ fun NotificationCenterOverlay(
                                                 app = app,
                                                 iconSize = 52.dp,
                                                 showLabel = true,
+                                                onGlassSurface = true,
                                                 cachedIconProvider = cachedIconProvider,
                                                 loadIconSuspend = loadIconSuspend,
                                                 onClick = {
@@ -724,7 +743,7 @@ fun NotificationCenterOverlay(
                                 .width(118.dp)
                                 .height(4.5.dp)
                                 .clip(CircleShape)
-                                .background(Color(0x99FFFFFF))
+                                .background(colors.textPrimary.copy(alpha = 0.52f))
                         )
                     }
 
@@ -733,12 +752,8 @@ fun NotificationCenterOverlay(
                         active = false,
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val cam = allApps.firstOrNull {
-                                TurkishSearchNormalizer.containsMatch(it.key.packageName, "camera") ||
-                                    TurkishSearchNormalizer.containsMatch(it.label, "kamera")
-                            }
                             onDismiss()
-                            if (cam != null) onLaunchApp(cam)
+                            if (cameraApp != null) onLaunchApp(cameraApp)
                         }
                     )
                 }
@@ -753,8 +768,13 @@ private fun CoverSheetCornerCircle(
     active: Boolean,
     onClick: () -> Unit
 ) {
+    val colors = HnmTheme.colors
     val bg by animateColorAsState(
-        targetValue = if (active) Color(0xEAFFFFFF) else Color(0x28FFFFFF),
+        targetValue = if (active) {
+            if (colors.isDark) Color(0xEAFFFFFF) else colors.accentBlue
+        } else {
+            colors.controlInactiveFill
+        },
         animationSpec = HnmMotion.slotHighlightSpring(),
         label = "coverCornerBg"
     )
@@ -779,7 +799,11 @@ private fun CoverSheetCornerCircle(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (active) Color(0xFF0F172A) else Color.White,
+            tint = when {
+                active && colors.isDark -> Color(0xFF0F172A)
+                active -> Color.White
+                else -> colors.textPrimary
+            },
             modifier = Modifier.size(23.dp)
         )
     }

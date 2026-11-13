@@ -34,7 +34,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,6 +53,7 @@ import com.hnmlabs.hnmui.ui.components.GlassTone
 import com.hnmlabs.hnmui.ui.components.MiniAppIconPreview
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
 
 /**
  * İkona uzun basıldığında açılan iOS Haptic Touch tarzı buzlu cam bağlam menüsü.
@@ -78,23 +82,36 @@ fun QuickActionMenuOverlay(
     onUninstallApp: (AppItem) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = HnmTheme.colors
+    val isVisible = targetApp != null
+    var lastApp by remember { mutableStateOf(targetApp) }
+    if (targetApp != null) {
+        lastApp = targetApp
+    }
+
     AnimatedVisibility(
-        visible = targetApp != null,
+        visible = isVisible,
         enter = fadeIn(animationSpec = HnmMotion.sheetSpring()) +
             scaleIn(initialScale = 0.90f, animationSpec = HnmMotion.sheetSpring()),
         exit = fadeOut(animationSpec = HnmMotion.sheetSpring()) +
             scaleOut(targetScale = 0.90f, animationSpec = HnmMotion.sheetSpring())
     ) {
-        val app = targetApp ?: return@AnimatedVisibility
+        val app = targetApp ?: lastApp ?: return@AnimatedVisibility
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(HnmPalette.ScrimOverlay)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss
+                .background(colors.scrimOverlay)
+                .then(
+                    if (isVisible) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onDismiss
+                        )
+                    } else {
+                        Modifier
+                    }
                 ),
             contentAlignment = Alignment.Center
         ) {
@@ -102,10 +119,16 @@ fun QuickActionMenuOverlay(
                 modifier = Modifier
                     .widthIn(max = 310.dp)
                     .fillMaxWidth(0.84f)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
+                    .then(
+                        if (isVisible) {
+                            Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {}
+                            )
+                        } else {
+                            Modifier
+                        }
                     ),
                 horizontalAlignment = Alignment.Start
             ) {
@@ -124,12 +147,13 @@ fun QuickActionMenuOverlay(
                     Column {
                         Text(
                             text = app.label,
-                            style = MaterialTheme.typography.titleLarge
+                            style = MaterialTheme.typography.titleLarge,
+                            color = colors.textPrimary
                         )
                         Text(
                             text = app.category.titleTr,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = HnmPalette.TextSecondary
+                            color = colors.textSecondary
                         )
                     }
                 }
@@ -148,7 +172,7 @@ fun QuickActionMenuOverlay(
                                 label = shortcut.longLabel?.takeIf { it.isNotBlank() }
                                     ?: shortcut.shortLabel,
                                 icon = Icons.Rounded.Bolt,
-                                tint = HnmPalette.AccentCyan,
+                                tint = colors.accentCyan,
                                 onClick = {
                                     onLaunchShortcut(shortcut)
                                     onDismiss()
@@ -171,7 +195,7 @@ fun QuickActionMenuOverlay(
                             ContextActionRow(
                                 label = "Alt Dock'a Sabitle",
                                 icon = Icons.AutoMirrored.Rounded.AddToHomeScreen,
-                                tint = HnmPalette.AccentCyan,
+                                tint = colors.accentCyan,
                                 onClick = {
                                     onToggleDockPin(app)
                                     onDismiss()
@@ -279,7 +303,7 @@ fun QuickActionMenuOverlay(
 private fun ContextActionRow(
     label: String,
     icon: ImageVector,
-    tint: Color = Color.White,
+    tint: Color = HnmTheme.colors.textPrimary,
     onClick: () -> Unit
 ) {
     Row(
@@ -308,6 +332,6 @@ private fun ContextActionRow(
 private fun MenuDivider() {
     HorizontalDivider(
         thickness = 0.5.dp,
-        color = HnmPalette.SubtleBorder
+        color = HnmTheme.colors.divider
     )
 }

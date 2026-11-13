@@ -58,6 +58,8 @@ import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.ResolvedHomeItem
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
+import com.hnmlabs.hnmui.ui.theme.WallpaperLabelShadow
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -75,6 +77,10 @@ private val PlaceholderIconBrush = Brush.linearGradient(
 /**
  * Squircle maskeli, yay tepkili, bildirim rozetli (badge) ve 120 FPS optimize
  * HNMUI uygulama ikonu bileşeni.
+ *
+ * [onGlassSurface] true olduğunda (Klasör içi, Spotlight, Özet kartları vb.) etiket rengi
+ * Açık/Koyu cam temasıyla canlanır; false olduğunda (Ana ekran duvar kağıdı üstü) her duvar
+ * kağıdında maksimum okunabilirlik için optik gölgeli beyaz etiket kullanılır.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -82,6 +88,7 @@ fun AppIconTile(
     app: AppItem,
     iconSize: Dp,
     showLabel: Boolean = true,
+    onGlassSurface: Boolean = false,
     isEditMode: Boolean = false,
     enableInternalClickHandling: Boolean = true,
     cachedIconProvider: (AppComponentKey) -> ImageBitmap?,
@@ -93,6 +100,7 @@ fun AppIconTile(
 ) {
     val haptics = LocalHapticFeedback.current
     val jigglePhaseState = LocalEditJigglePhase.current
+    val colors = HnmTheme.colors
 
     var iconBitmap by remember(app.key.stableId) {
         mutableStateOf(cachedIconProvider(app.key))
@@ -194,13 +202,22 @@ fun AppIconTile(
         if (showLabel) {
             val isCompact = iconSize <= 44.dp
             Spacer(modifier = Modifier.height(if (isCompact) 2.dp else 4.dp))
+            val baseStyle = MaterialTheme.typography.labelMedium
+            val resolvedStyle = if (onGlassSurface) {
+                baseStyle.copy(
+                    fontSize = if (isCompact) 10.sp else baseStyle.fontSize,
+                    color = colors.textPrimary
+                )
+            } else {
+                baseStyle.copy(
+                    fontSize = if (isCompact) 10.sp else baseStyle.fontSize,
+                    color = colors.onWallpaperPrimary,
+                    shadow = WallpaperLabelShadow
+                )
+            }
             Text(
                 text = app.label,
-                style = if (isCompact) {
-                    MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp)
-                } else {
-                    MaterialTheme.typography.labelMedium
-                },
+                style = resolvedStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
@@ -269,6 +286,7 @@ fun FolderIconTile(
 ) {
     val haptics = LocalHapticFeedback.current
     val jigglePhaseState = LocalEditJigglePhase.current
+    val colors = HnmTheme.colors
 
     val folderPhaseRad = remember(folder.id) {
         (((folder.id.hashCode() and 0x7FFFFFFF) % 360) * (PI / 180.0)).toFloat()
@@ -393,13 +411,14 @@ fun FolderIconTile(
         if (showLabel) {
             val isCompact = iconSize <= 44.dp
             Spacer(modifier = Modifier.height(if (isCompact) 2.dp else 4.dp))
+            val baseStyle = MaterialTheme.typography.labelMedium
             Text(
                 text = folder.title,
-                style = if (isCompact) {
-                    MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp)
-                } else {
-                    MaterialTheme.typography.labelMedium
-                },
+                style = baseStyle.copy(
+                    fontSize = if (isCompact) 10.sp else baseStyle.fontSize,
+                    color = colors.onWallpaperPrimary,
+                    shadow = WallpaperLabelShadow
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
@@ -453,6 +472,7 @@ fun NotificationBadgePill(
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
                 maxLines = 1
             )
         }

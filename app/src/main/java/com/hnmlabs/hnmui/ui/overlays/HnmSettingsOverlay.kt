@@ -13,6 +13,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,12 +43,15 @@ import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.BrightnessHigh
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Search
@@ -100,6 +104,7 @@ import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.data.InstalledAppsRepository
 import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
+import com.hnmlabs.hnmui.model.HnmThemeMode
 import com.hnmlabs.hnmui.model.LauncherCustomizationSettings
 import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
@@ -108,6 +113,7 @@ import com.hnmlabs.hnmui.ui.components.SquircleShape
 import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -172,6 +178,7 @@ fun HnmSettingsOverlay(
     onLaunchApp: (AppItem) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = HnmTheme.colors
     var currentRoute by remember { mutableStateOf(SettingsRoute.ROOT) }
     var searchQuery by remember { mutableStateOf("") }
 
@@ -208,7 +215,7 @@ fun HnmSettingsOverlay(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color(0xEB0B1220), Color(0xF5070C16))
+                        colors = listOf(colors.settingsBackdropTop, colors.settingsBackdropBottom)
                     )
                 )
                 .hnmSafeTopPadding()
@@ -256,7 +263,9 @@ fun HnmSettingsOverlay(
                     )
 
                     SettingsRoute.DISPLAY_BRIGHTNESS -> DisplayBrightnessSubPage(
+                        customization = customization,
                         targetRefreshRateHz = targetRefreshRateHz,
+                        onUpdateCustomization = onUpdateCustomization,
                         onBack = { currentRoute = SettingsRoute.ROOT }
                     )
 
@@ -429,7 +438,7 @@ private fun SettingsRootPage(
                     Box(modifier = Modifier.weight(1f)) {
                         if (searchQuery.isEmpty()) {
                             Text(
-                                text = "Pil, 7x7 ızgara, Dock, ses, depolama ara...",
+                                text = "Görünüm, Koyu/Açık mod, 7x7 ızgara, pil ara...",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = HnmPalette.TextMuted
                             )
@@ -438,7 +447,9 @@ private fun SettingsRootPage(
                             value = searchQuery,
                             onValueChange = onSearchQueryChange,
                             singleLine = true,
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                color = HnmTheme.colors.textPrimary
+                            ),
                             cursorBrush = SolidColor(HnmPalette.AccentCyan),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -487,7 +498,8 @@ private fun SettingsRootPage(
                             Text(
                                 text = about.deviceName.take(2).uppercase(),
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
@@ -496,8 +508,7 @@ private fun SettingsRootPage(
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "${targetRefreshRateHz} Hz • ${customization.gridColumns}×${customization.gridRows} Izgara • " +
-                                    if (isDefaultLauncher) "Varsayılan Launcher" else "Kurulum Bekliyor",
+                                text = "${targetRefreshRateHz} Hz • ${customization.themeMode.shortTitleTr} • ${customization.gridColumns}×${customization.gridRows} Izgara",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = HnmPalette.TextMuted
                             )
@@ -512,14 +523,33 @@ private fun SettingsRootPage(
             }
         }
 
-        if (matches("ana ekran", "ızgara", "7x7", "klasör", "dock", "ikon", "boyut", "cam", "duvar kağıdı")) {
+        if (
+            matches(
+                "ana ekran",
+                "ızgara",
+                "7x7",
+                "klasör",
+                "dock",
+                "ikon",
+                "boyut",
+                "cam",
+                "duvar kağıdı",
+                "tema",
+                "görünüm",
+                "koyu",
+                "açık",
+                "dark",
+                "light",
+                "gece"
+            )
+        ) {
             item(key = "group_customization") {
                 SettingsGroupCard(title = "ARAYÜZ VE MİNİMALİST ÖZELLEŞTİRME") {
                     SettingsNavRow(
                         icon = Icons.Rounded.GridView,
                         badgeColor = HnmPalette.AccentBlue,
                         title = "Ana Ekran, Klasör & Dock",
-                        subtitle = "7×7 ızgara, klasör dizilimi ve Dock boyutu",
+                        subtitle = "Görünüm modu, 7×7 ızgara, klasör ve Dock",
                         valueLabel = "${customization.gridColumns}×${customization.gridRows}",
                         onClick = { onNavigate(SettingsRoute.CUSTOMIZATION) }
                     )
@@ -564,15 +594,34 @@ private fun SettingsRootPage(
             }
         }
 
-        if (matches("ekran", "parlaklık", "120", "ses", "titreşim", "pil", "batarya", "şarj", "sağlık")) {
+        if (
+            matches(
+                "ekran",
+                "parlaklık",
+                "120",
+                "ses",
+                "titreşim",
+                "pil",
+                "batarya",
+                "şarj",
+                "sağlık",
+                "tema",
+                "görünüm",
+                "koyu",
+                "açık",
+                "dark",
+                "light",
+                "gece"
+            )
+        ) {
             item(key = "group_hardware") {
                 SettingsGroupCard(title = "EKRAN, SES VE PİL") {
                     SettingsNavRow(
                         icon = Icons.Rounded.BrightnessHigh,
                         badgeColor = Color(0xFFF59E0B),
                         title = "Ekran ve Parlaklık",
-                        subtitle = "Parlaklık, ekran süresi ve yön kilidi",
-                        valueLabel = "${targetRefreshRateHz} Hz",
+                        subtitle = "Açık/Koyu görünüm, parlaklık ve yön kilidi",
+                        valueLabel = "${customization.themeMode.shortTitleTr} • ${targetRefreshRateHz} Hz",
                         onClick = { onNavigate(SettingsRoute.DISPLAY_BRIGHTNESS) }
                     )
                     SettingsDivider()
@@ -637,6 +686,90 @@ private fun SettingsRootPage(
 }
 
 @Composable
+private fun AppearanceModeSelectorCard(
+    selectedMode: HnmThemeMode,
+    onSelectMode: (HnmThemeMode) -> Unit
+) {
+    val colors = HnmTheme.colors
+    SettingsGroupCard(title = "SİSTEM GÖRÜNÜM MODU (OTOMATİK / AÇIK / KOYU)") {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Android sistem temasını canlı takip eder veya seçtiğiniz cam dokusuna yumuşak geçişle kilitlenir",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textMuted
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val options = listOf(
+                    Triple(HnmThemeMode.SYSTEM, Icons.Rounded.BrightnessAuto, "Sistem"),
+                    Triple(HnmThemeMode.LIGHT, Icons.Rounded.LightMode, "Sedefli Açık"),
+                    Triple(HnmThemeMode.DARK, Icons.Rounded.DarkMode, "Gece Koyu")
+                )
+                options.forEach { (mode, icon, subtitle) ->
+                    val isSelected = selectedMode == mode
+                    val cardShape = RoundedCornerShape(16.dp)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(cardShape)
+                            .background(
+                                if (isSelected) {
+                                    colors.accentBlue.copy(alpha = if (colors.isDark) 0.24f else 0.14f)
+                                } else {
+                                    colors.surfaceSubtleFill
+                                }
+                            )
+                            .border(
+                                width = if (isSelected) 1.5.dp else 0.8.dp,
+                                color = if (isSelected) colors.accentBlue else colors.subtleBorder,
+                                shape = cardShape
+                            )
+                            .clickable { onSelectMode(mode) }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isSelected) colors.accentBlue else colors.controlInactiveFill
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = mode.titleTr,
+                                tint = if (isSelected) Color.White else colors.textPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Text(
+                            text = mode.shortTitleTr,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) colors.accentBlue else colors.textPrimary
+                        )
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textMuted,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun CustomizationSubPage(
     customization: LauncherCustomizationSettings,
     isDefaultLauncher: Boolean,
@@ -650,6 +783,15 @@ private fun CustomizationSubPage(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { SubPageHeader(title = "Ana Ekran, Klasör & Dock", onBack = onBack) }
+
+        item {
+            AppearanceModeSelectorCard(
+                selectedMode = customization.themeMode,
+                onSelectMode = { mode ->
+                    onUpdateCustomization { it.copy(themeMode = mode) }
+                }
+            )
+        }
 
         item {
             SettingsGroupCard(title = "HIZLI IZGARA PROFİLLERİ") {
@@ -1021,7 +1163,7 @@ private fun BatterySubPage(
                             .fillMaxWidth()
                             .height(22.dp)
                             .clip(RoundedCornerShape(11.dp))
-                            .background(Color(0x26FFFFFF))
+                            .background(HnmTheme.colors.sliderTrackInactive)
                     ) {
                         Box(
                             modifier = Modifier
@@ -1064,7 +1206,9 @@ private fun BatterySubPage(
 
 @Composable
 private fun DisplayBrightnessSubPage(
+    customization: LauncherCustomizationSettings,
     targetRefreshRateHz: Int,
+    onUpdateCustomization: ((LauncherCustomizationSettings) -> LauncherCustomizationSettings) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1114,6 +1258,15 @@ private fun DisplayBrightnessSubPage(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { SubPageHeader(title = "Ekran ve Parlaklık", onBack = onBack) }
+
+        item {
+            AppearanceModeSelectorCard(
+                selectedMode = customization.themeMode,
+                onSelectMode = { mode ->
+                    onUpdateCustomization { it.copy(themeMode = mode) }
+                }
+            )
+        }
 
         if (!snapshot.canWriteSystemSettings) {
             item {
@@ -1437,7 +1590,7 @@ private fun StorageSubPage(
                             .fillMaxWidth()
                             .height(18.dp)
                             .clip(RoundedCornerShape(9.dp))
-                            .background(Color(0x26FFFFFF))
+                            .background(HnmTheme.colors.sliderTrackInactive)
                     ) {
                         Box(
                             modifier = Modifier
@@ -1599,7 +1752,9 @@ private fun AppsManagerSubPage(
                         value = filter,
                         onValueChange = { filter = it },
                         singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = HnmTheme.colors.textPrimary
+                        ),
                         cursorBrush = SolidColor(HnmPalette.AccentCyan),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1705,7 +1860,7 @@ private fun GeneralAboutSubPage(
                             .fillMaxWidth()
                             .height(12.dp)
                             .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0x26FFFFFF))
+                            .background(HnmTheme.colors.sliderTrackInactive)
                     ) {
                         Box(
                             modifier = Modifier
@@ -1833,6 +1988,7 @@ private fun SettingsNavRow(
     valueLabel: String?,
     onClick: () -> Unit
 ) {
+    val colors = HnmTheme.colors
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1856,20 +2012,20 @@ private fun SettingsNavRow(
             )
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyMedium, color = Color.White)
-            Text(text = subtitle, style = MaterialTheme.typography.labelSmall, color = HnmPalette.TextMuted)
+            Text(text = title, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+            Text(text = subtitle, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
         }
         if (valueLabel != null) {
             Text(
                 text = valueLabel,
                 style = MaterialTheme.typography.bodyMedium,
-                color = HnmPalette.TextMuted
+                color = colors.textMuted
             )
         }
         Icon(
             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
             contentDescription = null,
-            tint = HnmPalette.TextMuted,
+            tint = colors.textMuted,
             modifier = Modifier.size(20.dp)
         )
     }
@@ -1877,6 +2033,7 @@ private fun SettingsNavRow(
 
 @Composable
 private fun InfoKeyValueRow(label: String, value: String) {
+    val colors = HnmTheme.colors
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1884,8 +2041,8 @@ private fun InfoKeyValueRow(label: String, value: String) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = HnmPalette.TextSecondary)
-        Text(text = value, style = MaterialTheme.typography.bodyMedium, color = Color.White, fontWeight = FontWeight.Medium)
+        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+        Text(text = value, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -1896,23 +2053,26 @@ private fun SettingsToggleRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val colors = HnmTheme.colors
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(text = title, style = MaterialTheme.typography.bodyMedium, color = Color.White)
-            Text(text = subtitle, style = MaterialTheme.typography.labelSmall, color = HnmPalette.TextMuted)
+            Text(text = title, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+            Text(text = subtitle, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
         }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
-                checkedTrackColor = HnmPalette.SuccessGreen,
+                checkedTrackColor = colors.successGreen,
+                checkedBorderColor = Color.Transparent,
                 uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = Color(0x38FFFFFF)
+                uncheckedTrackColor = colors.sliderTrackInactive,
+                uncheckedBorderColor = Color.Transparent
             )
         )
     }
@@ -1925,10 +2085,11 @@ private fun SegmentedChoicePill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = HnmTheme.colors
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) HnmPalette.AccentBlue else Color(0x1FFFFFFF))
+            .background(if (selected) colors.accentBlue else colors.surfaceSubtleFill)
             .clickable(onClick = onClick)
             .padding(vertical = 9.dp, horizontal = 6.dp),
         contentAlignment = Alignment.Center
@@ -1936,7 +2097,7 @@ private fun SegmentedChoicePill(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = if (selected) Color.White else HnmPalette.TextSecondary,
+            color = if (selected) Color.White else colors.textSecondary,
             maxLines = 1
         )
     }
@@ -1948,10 +2109,11 @@ private fun NumberPill(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val colors = HnmTheme.colors
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) HnmPalette.AccentBlue else Color(0x22FFFFFF))
+            .background(if (selected) colors.accentBlue else colors.surfaceSubtleFill)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp),
         contentAlignment = Alignment.Center
@@ -1959,7 +2121,7 @@ private fun NumberPill(
         Text(
             text = numberText,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White
+            color = if (selected) Color.White else colors.textPrimary
         )
     }
 }
@@ -1971,6 +2133,7 @@ private fun HnmMinimalSlider(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: (() -> Unit)? = null
 ) {
+    val colors = HnmTheme.colors
     val safeExternal = (if (value.isFinite()) value else valueRange.start)
         .coerceIn(valueRange.start, valueRange.endInclusive)
     var isDragging by remember { mutableStateOf(false) }
@@ -1996,9 +2159,9 @@ private fun HnmMinimalSlider(
         },
         valueRange = valueRange,
         colors = SliderDefaults.colors(
-            thumbColor = Color.White,
-            activeTrackColor = HnmPalette.AccentBlue,
-            inactiveTrackColor = Color(0x30FFFFFF)
+            thumbColor = if (colors.isDark) Color.White else colors.accentBlue,
+            activeTrackColor = colors.accentBlue,
+            inactiveTrackColor = colors.sliderTrackInactive
         )
     )
 }
@@ -2010,6 +2173,7 @@ private fun HnmSteppedCustomizationSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     onCommitPercent: (Int) -> Unit
 ) {
+    val colors = HnmTheme.colors
     val externalFloat = committedPercent.toFloat().coerceIn(valueRange.start, valueRange.endInclusive)
     var isDragging by remember { mutableStateOf(false) }
     var dragFloat by remember { mutableFloatStateOf(externalFloat) }
@@ -2031,7 +2195,7 @@ private fun HnmSteppedCustomizationSlider(
             Text(
                 text = "%$displayedPercent",
                 style = MaterialTheme.typography.labelSmall,
-                color = HnmPalette.AccentCyan
+                color = colors.accentCyan
             )
         }
         Slider(
@@ -2047,9 +2211,9 @@ private fun HnmSteppedCustomizationSlider(
             },
             valueRange = valueRange,
             colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = HnmPalette.AccentBlue,
-                inactiveTrackColor = Color(0x30FFFFFF)
+                thumbColor = if (colors.isDark) Color.White else colors.accentBlue,
+                activeTrackColor = colors.accentBlue,
+                inactiveTrackColor = colors.sliderTrackInactive
             )
         )
     }
@@ -2085,6 +2249,7 @@ private fun AppRowCard(
     onOpen: () -> Unit,
     onUninstall: () -> Unit
 ) {
+    val colors = HnmTheme.colors
     GlassSurface(
         modifier = Modifier
             .fillMaxWidth()
@@ -2106,8 +2271,8 @@ private fun AppRowCard(
                 loadIconSuspend = loadIconSuspend
             )
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = app.label, style = MaterialTheme.typography.bodyMedium, color = Color.White)
-                Text(text = app.category.titleTr, style = MaterialTheme.typography.labelSmall, color = HnmPalette.TextMuted)
+                Text(text = app.label, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+                Text(text = app.category.titleTr, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
             }
             if (!app.isSystemApp && app.key.stableId != InstalledAppsRepository.HNM_SETTINGS_KEY.stableId) {
                 IconButton(onClick = onUninstall, modifier = Modifier.size(32.dp)) {
@@ -2128,6 +2293,6 @@ private fun SettingsDivider() {
     HorizontalDivider(
         modifier = Modifier.padding(start = 58.dp),
         thickness = 0.6.dp,
-        color = Color(0x1FFFFFFF)
+        color = HnmTheme.colors.divider
     )
 }

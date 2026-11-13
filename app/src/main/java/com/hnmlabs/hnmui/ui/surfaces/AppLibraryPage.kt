@@ -55,6 +55,8 @@ import com.hnmlabs.hnmui.ui.components.MiniAppIconPreview
 import com.hnmlabs.hnmui.ui.components.SquircleShape
 import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
+import com.hnmlabs.hnmui.ui.theme.WallpaperLabelShadow
 
 /**
  * En sağ sayfa (Sayfa N+1): Otomatik kategorilenen Uygulama Arşivi (App Library).
@@ -73,6 +75,7 @@ fun AppLibraryPage(
     onExpandCategory: (AppLibraryGroup) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = HnmTheme.colors
     val haptics = LocalHapticFeedback.current
     var filterQuery by remember { mutableStateOf("") }
 
@@ -97,14 +100,14 @@ fun AppLibraryPage(
                 placeholder = {
                     Text(
                         text = "Uygulama Arşivi'nde Ara",
-                        color = HnmPalette.TextSecondary
+                        color = colors.textSecondary
                     )
                 },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Rounded.Search,
                         contentDescription = null,
-                        tint = HnmPalette.TextSecondary
+                        tint = colors.textSecondary
                     )
                 },
                 trailingIcon = {
@@ -113,7 +116,7 @@ fun AppLibraryPage(
                             Icon(
                                 imageVector = Icons.Rounded.Close,
                                 contentDescription = "Temizle",
-                                tint = HnmPalette.TextSecondary
+                                tint = colors.textSecondary
                             )
                         }
                     }
@@ -122,8 +125,9 @@ fun AppLibraryPage(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color.Transparent,
                     unfocusedBorderColor = Color.Transparent,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary,
+                    cursorColor = colors.accentBlue
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -224,6 +228,7 @@ private fun AppLibraryCategoryPod(
     onAppLongPress: (AppItem) -> Unit,
     onExpandCategory: () -> Unit
 ) {
+    val colors = HnmTheme.colors
     val hasOverflowCluster = group.apps.size > 4
 
     Column(
@@ -305,7 +310,8 @@ private fun AppLibraryCategoryPod(
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = group.category.titleTr,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelMedium.copy(shadow = WallpaperLabelShadow),
+            color = colors.onWallpaperPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center

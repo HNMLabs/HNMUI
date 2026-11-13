@@ -64,6 +64,8 @@ import com.hnmlabs.hnmui.ui.components.GlassSurface
 import com.hnmlabs.hnmui.ui.components.GlassTone
 import com.hnmlabs.hnmui.ui.components.hnmSafeTopPadding
 import com.hnmlabs.hnmui.ui.theme.HnmPalette
+import com.hnmlabs.hnmui.ui.theme.HnmTheme
+import com.hnmlabs.hnmui.ui.theme.WallpaperLabelShadow
 import com.hnmlabs.hnmui.widget.LauncherWidgetHostManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -102,6 +104,7 @@ fun TodayViewPage(
     onRemoveWidget: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = HnmTheme.colors
     val context = LocalContext.current
     val currentOnRemoveWidget by rememberUpdatedState(onRemoveWidget)
     var now by remember { mutableStateOf(LocalDateTime.now()) }
@@ -154,18 +157,19 @@ fun TodayViewPage(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = dateLabel.uppercase(trLocale),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = HnmPalette.TextSecondary
+                    style = MaterialTheme.typography.labelMedium.copy(shadow = WallpaperLabelShadow),
+                    color = colors.onWallpaperSecondary
                 )
                 Text(
                     text = greeting,
-                    style = MaterialTheme.typography.headlineLarge
+                    style = MaterialTheme.typography.headlineLarge.copy(shadow = WallpaperLabelShadow),
+                    color = colors.onWallpaperPrimary
                 )
                 if (isTabletHardwareDetected) {
                     Text(
                         text = "Telefon uyumluluk profili aktif • Tablet ızgarası rezerve",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = HnmPalette.AccentCyan
+                        style = MaterialTheme.typography.bodyMedium.copy(shadow = WallpaperLabelShadow),
+                        color = Color(0xFF38BDF8)
                     )
                 }
             }
@@ -183,7 +187,7 @@ fun TodayViewPage(
                                 Icon(
                                     imageVector = Icons.Rounded.Home,
                                     contentDescription = null,
-                                    tint = HnmPalette.AccentCyan
+                                    tint = colors.accentCyan
                                 )
                             },
                             title = "HNMUI'yi Varsayılan Yap",
@@ -236,7 +240,7 @@ fun TodayViewPage(
                                     Icons.Rounded.BatteryStd
                                 },
                                 contentDescription = null,
-                                tint = HnmPalette.SuccessGreen,
+                                tint = colors.successGreen,
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
@@ -256,7 +260,7 @@ fun TodayViewPage(
                                 "${targetRefreshRateHz} Hz akıcı mod"
                             },
                             style = MaterialTheme.typography.labelMedium,
-                            color = HnmPalette.TextMuted
+                            color = colors.textMuted
                         )
                     }
                 }
@@ -281,7 +285,7 @@ fun TodayViewPage(
                                     Icons.Rounded.Widgets
                                 },
                                 contentDescription = null,
-                                tint = HnmPalette.AccentCyan,
+                                tint = colors.accentCyan,
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
@@ -309,7 +313,7 @@ fun TodayViewPage(
                                 "Arşivde hazır"
                             },
                             style = MaterialTheme.typography.labelMedium,
-                            color = HnmPalette.TextMuted
+                            color = colors.textMuted
                         )
                     }
                 }
@@ -339,6 +343,7 @@ fun TodayViewPage(
                                 AppIconTile(
                                     app = app,
                                     iconSize = 54.dp,
+                                    onGlassSurface = true,
                                     cachedIconProvider = cachedIconProvider,
                                     loadIconSuspend = loadIconSuspend,
                                     onClick = { onLaunchApp(app) },
@@ -375,7 +380,7 @@ fun TodayViewPage(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(Color(0x1FFFFFFF))
+                                .background(colors.surfaceSubtleFill)
                                 .padding(horizontal = 14.dp, vertical = 12.dp),
                             contentAlignment = Alignment.CenterStart
                         ) {
@@ -383,7 +388,7 @@ fun TodayViewPage(
                                 Text(
                                     text = "Yeni not veya hatırlatma ekle...",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = HnmPalette.TextMuted
+                                    color = colors.textMuted
                                 )
                             }
                             BasicTextField(
@@ -391,9 +396,9 @@ fun TodayViewPage(
                                 onValueChange = { noteDraft = it },
                                 singleLine = true,
                                 textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                    color = Color.White
+                                    color = colors.textPrimary
                                 ),
-                                cursorBrush = SolidColor(HnmPalette.AccentCyan),
+                                cursorBrush = SolidColor(colors.accentCyan),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(
                                     onDone = {
@@ -411,7 +416,7 @@ fun TodayViewPage(
                             modifier = Modifier
                                 .size(42.dp)
                                 .clip(CircleShape)
-                                .background(HnmPalette.AccentBlue)
+                                .background(colors.accentBlue)
                                 .clickable {
                                     if (noteDraft.isNotBlank()) {
                                         onAddQuickNote(noteDraft)
@@ -444,7 +449,7 @@ fun TodayViewPage(
                                     Icons.Rounded.RadioButtonUnchecked
                                 },
                                 contentDescription = null,
-                                tint = if (note.isDone) HnmPalette.SuccessGreen else HnmPalette.TextMuted,
+                                tint = if (note.isDone) colors.successGreen else colors.textMuted,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
@@ -457,9 +462,9 @@ fun TodayViewPage(
                                         TextDecoration.None
                                     },
                                     color = if (note.isDone) {
-                                        HnmPalette.TextMuted
+                                        colors.textMuted
                                     } else {
-                                        HnmPalette.TextPrimary
+                                        colors.textPrimary
                                     }
                                 ),
                                 modifier = Modifier.weight(1f)
@@ -471,7 +476,7 @@ fun TodayViewPage(
                                 Icon(
                                     imageVector = Icons.Rounded.Close,
                                     contentDescription = "Sil",
-                                    tint = HnmPalette.TextMuted,
+                                    tint = colors.textMuted,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -503,7 +508,7 @@ fun TodayViewPage(
                             Icon(
                                 imageVector = Icons.Rounded.Widgets,
                                 contentDescription = null,
-                                tint = HnmPalette.AccentCyan
+                                tint = colors.accentCyan
                             )
                             Text(
                                 text = "Android Widget'ları",
@@ -514,7 +519,7 @@ fun TodayViewPage(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(Color(0x2EFFFFFF))
+                                .background(colors.controlInactiveFill)
                                 .clickable(onClick = onPickWidget)
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
@@ -529,7 +534,7 @@ fun TodayViewPage(
                         Text(
                             text = "Hava durumu, takvim veya müzik gibi favori Android widget'larınızı buraya sabitleyebilirsiniz.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = HnmPalette.TextMuted
+                            color = colors.textMuted
                         )
                     } else {
                         distinctWidgetIds.forEach { widgetId ->
@@ -582,6 +587,7 @@ private fun SetupActionCard(
     actionLabel: String,
     onClick: () -> Unit
 ) {
+    val colors = HnmTheme.colors
     GlassSurface(
         modifier = Modifier
             .fillMaxWidth()
@@ -600,7 +606,7 @@ private fun SetupActionCard(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(Color(0x24FFFFFF)),
+                    .background(colors.surfaceSubtleFill),
                 contentAlignment = Alignment.Center
             ) {
                 icon()
@@ -610,16 +616,20 @@ private fun SetupActionCard(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = HnmPalette.TextMuted
+                    color = colors.textMuted
                 )
             }
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(14.dp))
-                    .background(HnmPalette.AccentBlue)
+                    .background(colors.accentBlue)
                     .padding(horizontal = 12.dp, vertical = 7.dp)
             ) {
-                Text(text = actionLabel, style = MaterialTheme.typography.labelSmall)
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White
+                )
             }
         }
     }
