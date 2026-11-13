@@ -6,7 +6,7 @@ lifecycle = "2.8.7"
 activityCompose = "1.9.3"
 composeBom = "2024.12.01"
 datastore = "1.1.1"
-kotlinxSerializationJson = "1.7.3"
+kotlinxSerializationJson = "1.12.0"
 coroutines = "1.9.0"
 junit = "4.13.2"
 
