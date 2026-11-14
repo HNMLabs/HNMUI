@@ -25,6 +25,6 @@ Private signing keys (`*.jks`, `keystore.properties`) are never stored in this r
 
 To verify an APK's public X.509 certificate:
 ```bash
-keytool -printcert -jarfile HNMUI-v0.3.4-alpha.apk
+keytool -printcert -jarfile HNMUI-v0.3.4.1-alpha.apk
 ```
 - **SHA-256:** `94:A4:BA:C6:70:06:61:E3:6B:BD:16:77:FA:07:74:B0:A6:01:F4:94:F9:28:69:C1:B6:6C:8D:10:DB:16:B7:FF`

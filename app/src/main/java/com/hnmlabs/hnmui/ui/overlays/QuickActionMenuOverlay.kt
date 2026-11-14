@@ -16,10 +16,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.AddToHomeScreen
 import androidx.compose.material.icons.rounded.Bolt
@@ -85,8 +88,19 @@ fun QuickActionMenuOverlay(
     val colors = HnmTheme.colors
     val isVisible = targetApp != null
     var lastApp by remember { mutableStateOf(targetApp) }
+    var lastShortcuts by remember { mutableStateOf(shortcuts) }
+    var lastContainingFolderId by remember { mutableStateOf(containingFolderId) }
+    var lastAlreadyOnHome by remember { mutableStateOf(isAlreadyOnHome) }
+    var lastInDock by remember { mutableStateOf(isInDock) }
+    var lastCanAddDock by remember { mutableStateOf(canAddMoreToDock) }
+
     if (targetApp != null) {
         lastApp = targetApp
+        lastShortcuts = shortcuts
+        lastContainingFolderId = containingFolderId
+        lastAlreadyOnHome = isAlreadyOnHome
+        lastInDock = isInDock
+        lastCanAddDock = canAddMoreToDock
     }
 
     AnimatedVisibility(
@@ -97,6 +111,11 @@ fun QuickActionMenuOverlay(
             scaleOut(targetScale = 0.90f, animationSpec = HnmMotion.sheetSpring())
     ) {
         val app = targetApp ?: lastApp ?: return@AnimatedVisibility
+        val displayShortcuts = if (isVisible) shortcuts else lastShortcuts
+        val displayFolderId = if (isVisible) containingFolderId else lastContainingFolderId
+        val displayAlreadyOnHome = if (isVisible) isAlreadyOnHome else lastAlreadyOnHome
+        val displayInDock = if (isVisible) isInDock else lastInDock
+        val displayCanAddDock = if (isVisible) canAddMoreToDock else lastCanAddDock
 
         Box(
             modifier = Modifier
@@ -119,6 +138,7 @@ fun QuickActionMenuOverlay(
                 modifier = Modifier
                     .widthIn(max = 310.dp)
                     .fillMaxWidth(0.84f)
+                    .padding(vertical = 24.dp)
                     .then(
                         if (isVisible) {
                             Modifier.clickable(
@@ -161,13 +181,19 @@ fun QuickActionMenuOverlay(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 GlassSurface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
                     shape = RoundedCornerShape(24.dp),
                     tone = GlassTone.ELEVATED_MODAL
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    ) {
                         // Sistem kısayolları (LauncherApps.ShortcutQuery)
-                        shortcuts.forEach { shortcut ->
+                        displayShortcuts.forEach { shortcut ->
                             ContextActionRow(
                                 label = shortcut.longLabel?.takeIf { it.isNotBlank() }
                                     ?: shortcut.shortLabel,
@@ -181,7 +207,7 @@ fun QuickActionMenuOverlay(
                             MenuDivider()
                         }
 
-                        if (isInDock) {
+                        if (displayInDock) {
                             ContextActionRow(
                                 label = "Dock'tan Ana Ekrana Çıkar",
                                 icon = Icons.Rounded.RemoveCircleOutline,
@@ -191,7 +217,7 @@ fun QuickActionMenuOverlay(
                                 }
                             )
                             MenuDivider()
-                        } else if (canAddMoreToDock) {
+                        } else if (displayCanAddDock) {
                             ContextActionRow(
                                 label = "Alt Dock'a Sabitle",
                                 icon = Icons.AutoMirrored.Rounded.AddToHomeScreen,
@@ -204,18 +230,18 @@ fun QuickActionMenuOverlay(
                             MenuDivider()
                         }
 
-                        if (containingFolderId != null) {
+                        if (displayFolderId != null) {
                             ContextActionRow(
                                 label = "Klasörden Ana Ekrana Çıkar",
                                 icon = Icons.Rounded.FolderOpen,
                                 onClick = {
-                                    onExtractFromFolderToHome(containingFolderId, app)
+                                    onExtractFromFolderToHome(displayFolderId, app)
                                     onDismiss()
                                 }
                             )
                             MenuDivider()
                         } else {
-                            if (!isAlreadyOnHome) {
+                            if (!displayAlreadyOnHome) {
                                 ContextActionRow(
                                     label = "Ana Ekrana Ekle",
                                     icon = Icons.AutoMirrored.Rounded.AddToHomeScreen,
@@ -236,20 +262,24 @@ fun QuickActionMenuOverlay(
                                 )
                                 MenuDivider()
                             }
+                        }
 
-                            val firstExistingFolder = existingFolders.firstOrNull()
-                            if (firstExistingFolder != null) {
-                                ContextActionRow(
-                                    label = "\"${firstExistingFolder.title}\" Klasörüne Taşı",
-                                    icon = Icons.Rounded.FolderOpen,
-                                    onClick = {
-                                        onMoveToFolder(app, firstExistingFolder.id)
-                                        onDismiss()
-                                    }
-                                )
-                                MenuDivider()
-                            }
+                        val candidateFolders = existingFolders
+                            .filter { it.id != displayFolderId }
+                            .take(4)
+                        candidateFolders.forEach { folder ->
+                            ContextActionRow(
+                                label = "\"${folder.title}\" Klasörüne Taşı",
+                                icon = Icons.Rounded.FolderOpen,
+                                onClick = {
+                                    onMoveToFolder(app, folder.id)
+                                    onDismiss()
+                                }
+                            )
+                            MenuDivider()
+                        }
 
+                        if (displayFolderId == null) {
                             ContextActionRow(
                                 label = "Yeni Klasör Oluştur",
                                 icon = Icons.Rounded.CreateNewFolder,

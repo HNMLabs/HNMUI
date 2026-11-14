@@ -68,14 +68,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -197,9 +202,58 @@ fun ControlCenterOverlay(
             ) +
             scaleOut(targetScale = 0.96f, animationSpec = HnmMotion.sheetSpring())
     ) {
+        val sheetScrollState = rememberScrollState()
+        val nestedSwipeDismissConnection = remember {
+            var unconsumedUpwardPx = 0f
+            var dismissedByNested = false
+            object : NestedScrollConnection {
+                override fun onPreScroll(
+                    available: Offset,
+                    source: NestedScrollSource
+                ): Offset {
+                    if (available.y > 0f) {
+                        unconsumedUpwardPx = 0f
+                        dismissedByNested = false
+                    }
+                    return Offset.Zero
+                }
+
+                override fun onPostScroll(
+                    consumed: Offset,
+                    available: Offset,
+                    source: NestedScrollSource
+                ): Offset {
+                    if (source == NestedScrollSource.UserInput &&
+                        available.y < 0f &&
+                        !dismissedByNested
+                    ) {
+                        unconsumedUpwardPx += available.y
+                        if (unconsumedUpwardPx < -85f) {
+                            dismissedByNested = true
+                            unconsumedUpwardPx = 0f
+                            currentOnDismiss()
+                        }
+                    } else if (available.y > 0f) {
+                        unconsumedUpwardPx = 0f
+                    }
+                    return Offset.Zero
+                }
+
+                override suspend fun onPostFling(
+                    consumed: Velocity,
+                    available: Velocity
+                ): Velocity {
+                    unconsumedUpwardPx = 0f
+                    dismissedByNested = false
+                    return Velocity.Zero
+                }
+            }
+        }
+
         // Kapanış animasyonu sürerken dokunma olaylarını anında serbest bırak (tekrar açılışta 0 takılma!)
         val backdropTouchModifier = if (visible) {
             Modifier
+                .nestedScroll(nestedSwipeDismissConnection)
                 .pointerInput(Unit) {
                     var upwardSwipePx = 0f
                     var dismissedInGesture = false
@@ -248,7 +302,7 @@ fun ControlCenterOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(sheetScrollState)
                     .hnmSafeTopPadding()
                     .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 14.dp)

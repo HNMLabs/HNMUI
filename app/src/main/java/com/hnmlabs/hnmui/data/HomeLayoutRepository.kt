@@ -154,7 +154,7 @@ class HomeLayoutRepository(
                 maxPerPage = maxPerPage
             )
             if (normalized != existing) {
-                prefs[stateKey] = json.encodeToString(normalized)
+                prefs[stateKey] = encodeAndPrimeCache(normalized)
             }
         }
     }
@@ -281,7 +281,8 @@ class HomeLayoutRepository(
         appKey: AppComponentKey,
         targetFolderId: String?,
         folderTitle: String = "Klasör"
-    ) {
+    ): String? {
+        var resolvedFolderId: String? = null
         mutateState { state ->
             // Uygulamayı hem Dock'tan hem de mevcut sayfalardan/diğer klasörlerden çıkar ki kopyalanmasın
             val nextDock = state.dock.filterNot { it.stableId == appKey.stableId }
@@ -309,15 +310,20 @@ class HomeLayoutRepository(
                         }
                     )
                 }
-                if (!addedToTarget) return@mutateState state
+                if (!addedToTarget) {
+                    resolvedFolderId = null
+                    return@mutateState state
+                }
+                resolvedFolderId = targetFolderId
                 state.copy(
                     dock = nextDock,
                     pages = pruneEmptyExtraPages(updatedPages)
                 )
             } else {
+                val createdId = UUID.randomUUID().toString()
                 val newFolder = HomeGridItem.FolderTile(
-                    id = UUID.randomUUID().toString(),
-                    title = folderTitle,
+                    id = createdId,
+                    title = folderTitle.trim().ifEmpty { "Klasör" },
                     apps = listOf(appKey)
                 )
                 val firstPage = strippedPages.firstOrNull()
@@ -329,12 +335,14 @@ class HomeLayoutRepository(
                 }
                 val maxPerPage = (state.customization.gridColumns * state.customization.gridRows)
                     .coerceAtLeast(16)
+                resolvedFolderId = createdId
                 state.copy(
                     dock = nextDock,
                     pages = rebalancePages(strippedPages, maxPerPage)
                 )
             }
         }
+        return resolvedFolderId
     }
 
     suspend fun renameFolder(folderId: String, newTitle: String) {
@@ -514,13 +522,17 @@ class HomeLayoutRepository(
                                 if (id in installedIds && seenAppIds.add(id)) item else null
                             }
                             is HomeGridItem.FolderTile -> {
+                                val distinctOriginalSize = item.apps.distinctBy { it.stableId }.size
                                 val validApps = item.apps.filter { appKey ->
                                     val id = appKey.stableId
                                     id in installedIds && seenAppIds.add(id)
                                 }
-                                when (validApps.size) {
-                                    0 -> null
-                                    1 -> HomeGridItem.AppTile(validApps.first())
+                                when {
+                                    validApps.isEmpty() -> null
+                                    // Çoklu klasörden bir uygulama kaldırıldığında kalan tek ikonu ana ekrana çıkar;
+                                    // ancak kullanıcının "Yeni Klasör Oluştur" ile bilinçli açtığı 1 uygulamalı klasörü koru!
+                                    validApps.size == 1 && distinctOriginalSize > 1 ->
+                                        HomeGridItem.AppTile(validApps.first())
                                     else -> item.copy(apps = validApps)
                                 }
                             }
@@ -832,9 +844,10 @@ class HomeLayoutRepository(
                                     item
                                 } else {
                                     val rem = item.apps.filterNot { it.stableId == appStableId }
-                                    when (rem.size) {
-                                        0 -> null
-                                        1 -> HomeGridItem.AppTile(rem.first())
+                                    when {
+                                        rem.size == item.apps.size -> item
+                                        rem.isEmpty() -> null
+                                        rem.size == 1 -> HomeGridItem.AppTile(rem.first())
                                         else -> item.copy(apps = rem)
                                     }
                                 }

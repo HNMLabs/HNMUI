@@ -54,10 +54,25 @@ class LauncherActivity : ComponentActivity() {
 
     private var pendingAppWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID
     private var explicitUserRoleTap: Boolean = false
+    private var lastEffectiveDark: Boolean? = null
+
+    private fun resolveCurrentDarkFlag(): Boolean {
+        lastEffectiveDark?.let { return it }
+        val sysNight = (resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        return resolveIsDarkTheme(
+            mode = viewModel.uiState.value.customization.themeMode,
+            systemDark = sysNight
+        )
+    }
 
     private val rehideTransientStatusBarRunnable = Runnable {
         if (!isFinishing && !isDestroyed && viewModel.uiState.value.customization.useIosStatusBar) {
-            applySystemStatusBarPolicy(hideForIosBar = true)
+            applySystemStatusBarPolicy(
+                hideForIosBar = true,
+                isDarkTheme = resolveCurrentDarkFlag()
+            )
         }
     }
 
@@ -143,7 +158,10 @@ class LauncherActivity : ComponentActivity() {
             ViewCompat.onApplyWindowInsets(view, insets)
         }
 
-        applySystemStatusBarPolicy(hideForIosBar = viewModel.uiState.value.customization.useIosStatusBar)
+        applySystemStatusBarPolicy(
+            hideForIosBar = viewModel.uiState.value.customization.useIosStatusBar,
+            isDarkTheme = resolveCurrentDarkFlag()
+        )
         syncDeviceAndPermissionStateAsync { isDefault ->
             // İlk açılışta HNMUI henüz varsayılan Ana Ekran değilse sistem seçim penceresini otomatik sun
             if (savedInstanceState == null && !app.hasAutoPromptedDefaultRole && !isDefault) {
@@ -163,6 +181,7 @@ class LauncherActivity : ComponentActivity() {
             val effectiveDark = resolveIsDarkTheme(mode = themeMode, systemDark = systemDark)
 
             LaunchedEffect(useIosStatusBar, effectiveDark) {
+                lastEffectiveDark = effectiveDark
                 applySystemStatusBarPolicy(
                     hideForIosBar = useIosStatusBar,
                     isDarkTheme = effectiveDark
@@ -202,7 +221,10 @@ class LauncherActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        applySystemStatusBarPolicy(hideForIosBar = viewModel.uiState.value.customization.useIosStatusBar)
+        applySystemStatusBarPolicy(
+            hideForIosBar = viewModel.uiState.value.customization.useIosStatusBar,
+            isDarkTheme = resolveCurrentDarkFlag()
+        )
         syncDeviceAndPermissionStateAsync()
         app.installedAppsRepository.refreshAppsAsync(force = false)
     }
@@ -218,9 +240,7 @@ class LauncherActivity : ComponentActivity() {
                     WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 if (isDarkTheme != null) {
                     controller.isAppearanceLightNavigationBars = !isDarkTheme
-                    if (!hideForIosBar) {
-                        controller.isAppearanceLightStatusBars = !isDarkTheme
-                    }
+                    controller.isAppearanceLightStatusBars = !isDarkTheme
                 }
                 if (hideForIosBar) {
                     controller.hide(WindowInsetsCompat.Type.statusBars())

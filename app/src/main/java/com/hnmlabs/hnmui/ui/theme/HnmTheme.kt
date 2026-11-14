@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -12,9 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -163,7 +164,7 @@ val LightHnmColors = HnmColors(
     badgeRed = Color(0xFFFF3B30)
 )
 
-val LocalHnmColors = staticCompositionLocalOf { DarkHnmColors }
+val LocalHnmColors = compositionLocalOf { DarkHnmColors }
 
 object HnmTheme {
     val colors: HnmColors
@@ -280,82 +281,79 @@ fun HnmLauncherTheme(
         badgeRed = target.badgeRed
     )
 
-    val colorScheme = remember(
-        isDark,
-        animatedColors.accentBlue,
-        animatedColors.accentCyan,
-        animatedColors.glassCardFillTop,
-        animatedColors.textPrimary
-    ) {
+    // KRİTİK 120 FPS: MaterialTheme'in iç LocalColorScheme ve LocalTypography sağlayıcıları
+    // staticCompositionLocalOf kullandığı için YALNIZCA isDark değiştiğinde (1 kez) güncellenir;
+    // ara karelerdeki yumuşak metin ve yüzey geçişleri izlenebilir LocalHnmColors + LocalContentColor ile akar!
+    val colorScheme = remember(isDark) {
         if (isDark) {
             darkColorScheme(
-                primary = animatedColors.accentBlue,
-                secondary = animatedColors.accentCyan,
+                primary = target.accentBlue,
+                secondary = target.accentCyan,
                 background = Color.Transparent,
-                surface = animatedColors.glassCardFillTop,
+                surface = target.glassCardFillTop,
                 onPrimary = Color.White,
-                onBackground = animatedColors.textPrimary,
-                onSurface = animatedColors.textPrimary,
-                error = animatedColors.badgeRed
+                onBackground = target.textPrimary,
+                onSurface = target.textPrimary,
+                error = target.badgeRed
             )
         } else {
             lightColorScheme(
-                primary = animatedColors.accentBlue,
-                secondary = animatedColors.accentCyan,
+                primary = target.accentBlue,
+                secondary = target.accentCyan,
                 background = Color.Transparent,
-                surface = animatedColors.glassCardFillTop,
+                surface = target.glassCardFillTop,
                 onPrimary = Color.White,
-                onBackground = animatedColors.textPrimary,
-                onSurface = animatedColors.textPrimary,
-                error = animatedColors.badgeRed
+                onBackground = target.textPrimary,
+                onSurface = target.textPrimary,
+                error = target.badgeRed
             )
         }
     }
 
-    val typography = remember(animatedColors.textPrimary, animatedColors.textSecondary) {
+    val typography = remember(isDark) {
         Typography(
             headlineLarge = TextStyle(
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = (-0.6).sp,
-                color = animatedColors.textPrimary
+                color = Color.Unspecified
             ),
             titleLarge = TextStyle(
                 fontSize = 22.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = (-0.3).sp,
-                color = animatedColors.textPrimary
+                color = Color.Unspecified
             ),
             titleMedium = TextStyle(
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = animatedColors.textPrimary
+                color = Color.Unspecified
             ),
             titleSmall = TextStyle(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = animatedColors.textPrimary
+                color = Color.Unspecified
             ),
             bodyMedium = TextStyle(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Normal,
-                color = animatedColors.textSecondary
+                color = target.textSecondary
             ),
             bodySmall = TextStyle(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Normal,
-                color = animatedColors.textSecondary
+                color = target.textSecondary
             ),
             labelMedium = TextStyle(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 letterSpacing = 0.sp,
-                color = animatedColors.textPrimary
+                color = Color.Unspecified
             ),
             labelSmall = TextStyle(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = animatedColors.textPrimary
+                color = Color.Unspecified
             )
         )
     }
@@ -363,9 +361,13 @@ fun HnmLauncherTheme(
     CompositionLocalProvider(LocalHnmColors provides animatedColors) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = typography,
-            content = content
-        )
+            typography = typography
+        ) {
+            CompositionLocalProvider(
+                LocalContentColor provides animatedColors.textPrimary,
+                content = content
+            )
+        }
     }
 }
 

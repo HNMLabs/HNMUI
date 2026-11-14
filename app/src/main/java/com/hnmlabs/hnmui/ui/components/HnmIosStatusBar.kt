@@ -198,14 +198,17 @@ fun HnmIosStatusBar(
         }
     }
 
+    val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
     val cutoutPadding = WindowInsets.displayCutout.asPaddingValues()
-    val barHeight: Dp = max(cutoutPadding.calculateTopPadding(), 42.dp)
+    val barHeight: Dp = max(cutoutPadding.calculateTopPadding() + 4.dp, 42.dp)
+    val safeStartPad: Dp = max(18.dp, cutoutPadding.calculateLeftPadding(layoutDirection) + 6.dp)
+    val safeEndPad: Dp = max(18.dp, cutoutPadding.calculateRightPadding(layoutDirection) + 6.dp)
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(barHeight)
-            .padding(horizontal = 18.dp),
+            .padding(start = safeStartPad, end = safeEndPad),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {

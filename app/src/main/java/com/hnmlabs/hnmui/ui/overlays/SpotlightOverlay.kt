@@ -86,12 +86,17 @@ fun SpotlightOverlay(
 ) {
     val colors = HnmTheme.colors
     val focusRequester = remember { FocusRequester() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val haptics = LocalHapticFeedback.current
 
     LaunchedEffect(visible) {
         if (visible) {
             kotlinx.coroutines.delay(85L)
             runCatching { focusRequester.requestFocus() }
+        } else {
+            focusManager.clearFocus()
+            keyboardController?.hide()
         }
     }
 
