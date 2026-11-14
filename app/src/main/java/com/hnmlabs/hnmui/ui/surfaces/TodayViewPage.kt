@@ -35,11 +35,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,12 +50,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hnmlabs.hnmui.BuildConfig
 import com.hnmlabs.hnmui.core.system.DeviceSystemController
 import com.hnmlabs.hnmui.model.AppComponentKey
@@ -69,6 +76,7 @@ import com.hnmlabs.hnmui.ui.theme.WallpaperLabelShadow
 import com.hnmlabs.hnmui.widget.LauncherWidgetHostManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -100,23 +108,41 @@ fun TodayViewPage(
     onAddQuickNote: (String) -> Unit,
     onToggleQuickNote: (String) -> Unit,
     onDeleteQuickNote: (String) -> Unit,
+    onClearCompletedNotes: () -> Unit = {},
     onPickWidget: () -> Unit,
     onRemoveWidget: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = HnmTheme.colors
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
     val currentOnRemoveWidget by rememberUpdatedState(onRemoveWidget)
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var batteryInfo by remember { mutableStateOf(100 to false) }
 
+    suspend fun refreshTodaySnapshot() {
+        now = LocalDateTime.now()
+        val snap = withContext(Dispatchers.IO) {
+            DeviceSystemController.readBatterySnapshot(context)
+        }
+        batteryInfo = snap.levelPercent to snap.isCharging
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                coroutineScope.launch { refreshTodaySnapshot() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
-            now = LocalDateTime.now()
-            val snap = withContext(Dispatchers.IO) {
-                DeviceSystemController.readBatterySnapshot(context)
-            }
-            batteryInfo = snap.levelPercent to snap.isCharging
+            refreshTodaySnapshot()
             delay(60_000L)
         }
     }
@@ -366,10 +392,27 @@ fun TodayViewPage(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "Hızlı Notlar",
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Hızlı Notlar",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        if (quickNotes.any { it.isDone }) {
+                            Text(
+                                text = "Tamamlananları Temizle",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.accentCyan,
+                                modifier = Modifier.clickable {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onClearCompletedNotes()
+                                }
+                            )
+                        }
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

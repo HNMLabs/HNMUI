@@ -104,6 +104,7 @@ import com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer
 import com.hnmlabs.hnmui.data.InstalledAppsRepository
 import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
+import com.hnmlabs.hnmui.model.DoubleTapHomeAction
 import com.hnmlabs.hnmui.model.HnmThemeMode
 import com.hnmlabs.hnmui.model.LauncherCustomizationSettings
 import com.hnmlabs.hnmui.ui.components.GlassSurface
@@ -167,6 +168,7 @@ enum class SettingsRoute(val titleTr: String) {
 @Composable
 fun HnmSettingsOverlay(
     visible: Boolean,
+    initialRoute: SettingsRoute = SettingsRoute.ROOT,
     customization: LauncherCustomizationSettings,
     isDefaultLauncher: Boolean,
     targetRefreshRateHz: Int,
@@ -179,11 +181,13 @@ fun HnmSettingsOverlay(
     onDismiss: () -> Unit
 ) {
     val colors = HnmTheme.colors
-    var currentRoute by remember { mutableStateOf(SettingsRoute.ROOT) }
+    var currentRoute by remember { mutableStateOf(initialRoute) }
     var searchQuery by remember { mutableStateOf("") }
 
-    LaunchedEffect(visible) {
-        if (!visible) {
+    LaunchedEffect(visible, initialRoute) {
+        if (visible) {
+            currentRoute = initialRoute
+        } else {
             currentRoute = SettingsRoute.ROOT
             searchQuery = ""
         }
@@ -540,7 +544,10 @@ private fun SettingsRootPage(
                 "açık",
                 "dark",
                 "light",
-                "gece"
+                "gece",
+                "çift dokun",
+                "hareket",
+                "spotlight"
             )
         ) {
             item(key = "group_customization") {
@@ -549,7 +556,7 @@ private fun SettingsRootPage(
                         icon = Icons.Rounded.GridView,
                         badgeColor = HnmPalette.AccentBlue,
                         title = "Ana Ekran, Klasör & Dock",
-                        subtitle = "Görünüm modu, 7×7 ızgara, klasör ve Dock",
+                        subtitle = "Görünüm, çift dokunuş hareketi, 7×7 ızgara ve Dock",
                         valueLabel = "${customization.gridColumns}×${customization.gridRows}",
                         onClick = { onNavigate(SettingsRoute.CUSTOMIZATION) }
                     )
@@ -791,6 +798,36 @@ private fun CustomizationSubPage(
                     onUpdateCustomization { it.copy(themeMode = mode) }
                 }
             )
+        }
+
+        item {
+            SettingsGroupCard(title = "BOŞ ALANA ÇİFT DOKUNUŞ HAREKETİ") {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Ana ekranda boş bir alana çift dokunduğunuzda anında açılacak eylem (${customization.doubleTapAction.titleTr})",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = HnmTheme.colors.textMuted
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        DoubleTapHomeAction.entries.forEach { action ->
+                            SegmentedChoicePill(
+                                label = action.shortTitleTr,
+                                selected = customization.doubleTapAction == action,
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    onUpdateCustomization { it.copy(doubleTapAction = action) }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         item {

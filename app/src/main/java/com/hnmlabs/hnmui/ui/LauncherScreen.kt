@@ -562,6 +562,7 @@ fun LauncherScreen(
                                     onAddQuickNote = viewModel::addQuickNote,
                                     onToggleQuickNote = viewModel::toggleQuickNote,
                                     onDeleteQuickNote = viewModel::deleteQuickNote,
+                                    onClearCompletedNotes = viewModel::clearCompletedQuickNotes,
                                     onPickWidget = onRequestPickWidget,
                                     onRemoveWidget = onRemoveHostedWidget
                                 )
@@ -603,7 +604,8 @@ fun LauncherScreen(
                                     onFolderClick = viewModel::openHomeFolder,
                                     onOpenHnmSettings = viewModel::openHnmSettings,
                                     onToggleEditMode = viewModel::toggleEditMode,
-                                    onPickWallpaper = onPickWallpaper
+                                    onPickWallpaper = onPickWallpaper,
+                                    onEmptyDoubleTap = viewModel::onEmptyHomeDoubleTap
                                 )
                             }
                         }
@@ -640,6 +642,19 @@ fun LauncherScreen(
                         cachedIconProvider = viewModel::getCachedIcon,
                         loadIconSuspend = viewModel::loadIconIfNeeded,
                         onSearchPillClick = viewModel::openSpotlight,
+                        onSelectHomePage = { targetHomeIdx ->
+                            val targetPagerPage = (1 + targetHomeIdx).coerceIn(1, homePageCount)
+                            if (targetPagerPage != pagerState.currentPage) {
+                                coroutineScope.launch {
+                                    runCatching {
+                                        pagerState.animateScrollToPage(
+                                            page = targetPagerPage,
+                                            animationSpec = HnmMotion.sheetSpring()
+                                        )
+                                    }
+                                }
+                            }
+                        },
                         onAppClick = viewModel::launchApp,
                         onAppLongPress = onOpenQuickMenuSimple,
                         onDismissQuickMenuAndEnterEdit = viewModel::enterEditModeForDrag,
@@ -713,6 +728,7 @@ fun LauncherScreen(
                 onAddQuickNote = viewModel::addQuickNote,
                 onToggleQuickNote = viewModel::toggleQuickNote,
                 onDeleteQuickNote = viewModel::deleteQuickNote,
+                onClearCompletedNotes = viewModel::clearCompletedQuickNotes,
                 onDismissNotificationCard = viewModel::dismissNotificationCard,
                 onClearAllNotificationCards = viewModel::clearAllNotificationCards,
                 onLaunchApp = viewModel::launchApp,
@@ -723,10 +739,11 @@ fun LauncherScreen(
                 onDismiss = viewModel::closeNotificationCenter
             )
 
-            // Aşağı kaydırma ile açılan Spotlight Hızlı Arama Katmanı
+            // Aşağı kaydırma veya çift dokunuş ile açılan Akıllı Spotlight 2.0 Katmanı
             SpotlightOverlay(
                 visible = state.isSpotlightOpen,
                 query = state.spotlightQuery,
+                themeMode = state.customization.themeMode,
                 suggestedApps = state.suggestedApps,
                 matchedApps = state.spotlightMatches,
                 cachedIconProvider = viewModel::getCachedIcon,
@@ -738,15 +755,16 @@ fun LauncherScreen(
                     viewModel.closeSpotlight()
                     DefaultLauncherHelper.openWebSearch(context, query)
                 },
-                onOpenSystemSettings = {
-                    viewModel.openHnmSettings()
-                },
+                onSetThemeMode = viewModel::setThemeMode,
+                onOpenControlCenter = viewModel::openControlCenter,
+                onOpenSettingsRoute = viewModel::openHnmSettingsRoute,
                 onDismiss = viewModel::closeSpotlight
             )
 
             // One UI'dan tamamen bağımsız Tam Ekran HNM Ayarlar Katmanı
             HnmSettingsOverlay(
                 visible = state.isHnmSettingsOpen,
+                initialRoute = state.initialSettingsRoute,
                 customization = state.customization,
                 isDefaultLauncher = state.isDefaultLauncher,
                 targetRefreshRateHz = state.targetRefreshRateHz,

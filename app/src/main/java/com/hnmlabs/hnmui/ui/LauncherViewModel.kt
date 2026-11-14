@@ -16,6 +16,7 @@ import com.hnmlabs.hnmui.model.AppComponentKey
 import com.hnmlabs.hnmui.model.AppItem
 import com.hnmlabs.hnmui.model.AppLibraryGroup
 import com.hnmlabs.hnmui.model.AppShortcutItem
+import com.hnmlabs.hnmui.model.DoubleTapHomeAction
 import com.hnmlabs.hnmui.model.HomeGridItem
 import com.hnmlabs.hnmui.model.LauncherCustomizationSettings
 import com.hnmlabs.hnmui.model.LiveNotificationCard
@@ -25,6 +26,7 @@ import com.hnmlabs.hnmui.model.ResolvedHomePage
 import com.hnmlabs.hnmui.service.HnmNotificationListenerService
 import com.hnmlabs.hnmui.ui.drag.DragOrigin
 import com.hnmlabs.hnmui.ui.drag.HoverDropTarget
+import com.hnmlabs.hnmui.ui.overlays.SettingsRoute
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -65,6 +67,7 @@ data class LauncherOverlayState(
     val isControlCenterOpen: Boolean = false,
     val isNotificationCenterOpen: Boolean = false,
     val isHnmSettingsOpen: Boolean = false,
+    val initialSettingsRoute: SettingsRoute = SettingsRoute.ROOT,
     val isEditMode: Boolean = false,
     val openFolderModal: ActiveFolderModal? = null,
     val quickMenu: ActiveQuickMenu? = null,
@@ -94,6 +97,7 @@ data class LauncherUiState(
     val isControlCenterOpen: Boolean,
     val isNotificationCenterOpen: Boolean,
     val isHnmSettingsOpen: Boolean,
+    val initialSettingsRoute: SettingsRoute,
     val isEditMode: Boolean,
     val openFolderModal: ActiveFolderModal?,
     val quickMenu: ActiveQuickMenu?,
@@ -108,6 +112,7 @@ private data class ResolvedWorkspaceSlice(
     val customization: LauncherCustomizationSettings,
     val allApps: List<AppItem>,
     val appById: Map<String, AppItem>,
+    val launchCounts: Map<String, Int>,
     val dockApps: List<AppItem>,
     val homePages: List<ResolvedHomePage>,
     val existingFolders: List<ResolvedHomeItem.Folder>,
@@ -270,6 +275,7 @@ class LauncherViewModel(
             customization = activeCustomization,
             allApps = badgedApps,
             appById = appById,
+            launchCounts = effectivePersisted.launchCounts,
             dockApps = dockApps,
             homePages = resolvedPages,
             existingFolders = resolvedFolders,
@@ -284,11 +290,11 @@ class LauncherViewModel(
         .flowOn(Dispatchers.Default)
 
     private val spotlightMatchesFlow: Flow<List<AppItem>> = combine(
-        workspaceFlow.map { it.allApps }.distinctUntilChanged(),
+        workspaceFlow.map { it.allApps to it.launchCounts }.distinctUntilChanged(),
         overlayState
             .map { if (it.isSpotlightOpen) it.spotlightQuery.trim() else "" }
             .distinctUntilChanged()
-    ) { allApps, trimmedQuery ->
+    ) { (allApps, launchCounts), trimmedQuery ->
         if (trimmedQuery.isEmpty() || allApps.isEmpty()) {
             emptyList()
         } else {
@@ -297,6 +303,7 @@ class LauncherViewModel(
                 .filter { it.matchesPreparedQuery(prepared) }
                 .sortedWith(
                     compareByDescending<AppItem> { it.labelStartsWithPreparedQuery(prepared) }
+                        .thenByDescending { launchCounts[it.key.stableId] ?: 0 }
                         .thenBy { it.foldedLabel }
                 )
         }
@@ -342,6 +349,7 @@ class LauncherViewModel(
             isControlCenterOpen = overlays.isControlCenterOpen,
             isNotificationCenterOpen = overlays.isNotificationCenterOpen,
             isHnmSettingsOpen = overlays.isHnmSettingsOpen,
+            initialSettingsRoute = overlays.initialSettingsRoute,
             isEditMode = overlays.isEditMode,
             openFolderModal = syncedFolderModal,
             quickMenu = overlays.quickMenu,
@@ -373,6 +381,7 @@ class LauncherViewModel(
                 isControlCenterOpen = false,
                 isNotificationCenterOpen = false,
                 isHnmSettingsOpen = false,
+                initialSettingsRoute = SettingsRoute.ROOT,
                 isEditMode = false,
                 openFolderModal = null,
                 quickMenu = null,
@@ -513,9 +522,14 @@ class LauncherViewModel(
     }
 
     fun openHnmSettings() {
+        openHnmSettingsRoute(SettingsRoute.ROOT)
+    }
+
+    fun openHnmSettingsRoute(route: SettingsRoute) {
         overlayState.update {
             it.copy(
                 isHnmSettingsOpen = true,
+                initialSettingsRoute = route,
                 isControlCenterOpen = false,
                 isNotificationCenterOpen = false,
                 isSpotlightOpen = false,
@@ -527,7 +541,23 @@ class LauncherViewModel(
     }
 
     fun closeHnmSettings() {
-        overlayState.update { it.copy(isHnmSettingsOpen = false) }
+        overlayState.update {
+            it.copy(
+                isHnmSettingsOpen = false,
+                initialSettingsRoute = SettingsRoute.ROOT
+            )
+        }
+    }
+
+    fun onEmptyHomeDoubleTap() {
+        val currentCustom = uiState.value.customization
+        when (currentCustom.doubleTapAction) {
+            DoubleTapHomeAction.SPOTLIGHT -> openSpotlight()
+            DoubleTapHomeAction.CONTROL_CENTER -> openControlCenter()
+            DoubleTapHomeAction.NOTIFICATION_CENTER -> openNotificationCenter()
+            DoubleTapHomeAction.THEME_CYCLE -> setThemeMode(currentCustom.themeMode.nextMode())
+            DoubleTapHomeAction.NONE -> Unit
+        }
     }
 
     fun updateCustomization(
@@ -736,6 +766,10 @@ class LauncherViewModel(
         viewModelScope.launch { layoutRepository.deleteQuickNote(noteId) }
     }
 
+    fun clearCompletedQuickNotes() {
+        viewModelScope.launch { layoutRepository.clearCompletedQuickNotes() }
+    }
+
     fun onWidgetBound(appWidgetId: Int) {
         viewModelScope.launch { layoutRepository.bindWidgetId(appWidgetId) }
     }
@@ -757,6 +791,7 @@ class LauncherViewModel(
                 isControlCenterOpen = false,
                 isNotificationCenterOpen = false,
                 isHnmSettingsOpen = false,
+                initialSettingsRoute = SettingsRoute.ROOT,
                 isEditMode = false,
                 openFolderModal = null,
                 quickMenu = null

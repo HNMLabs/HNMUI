@@ -5,6 +5,7 @@ import android.media.AudioManager
 import android.view.KeyEvent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -29,11 +30,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AirplanemodeActive
 import androidx.compose.material.icons.rounded.Bluetooth
@@ -50,6 +53,7 @@ import androidx.compose.material.icons.rounded.ScreenLockPortrait
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,6 +64,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,6 +75,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -100,10 +106,12 @@ import com.hnmlabs.hnmui.ui.theme.HnmTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Ana ekranda sağ üstten aşağı çekildiğinde açılan iOS tarzı buzlu cam Denetim Merkezi.
- * One UI bildirim/kontrol ekranına ihtiyaç duymadan parlaklık, ses, el feneri,
+ * One UI bildirim/kontrol ekranına ihtiyaç duymadan parlaklık, ses, ses modu, el feneri,
  * döndürme kilidi, canlı Koyu/Açık görünüm geçişi, medya oynatıcı ve bağlantı kısayollarını yönetir.
  */
 @Composable
@@ -137,6 +145,7 @@ fun ControlCenterOverlay(
     }
     var brightness by remember { mutableFloatStateOf(0.6f) }
     var volume by remember { mutableFloatStateOf(0.5f) }
+    var ringerMode by remember { mutableIntStateOf(AudioManager.RINGER_MODE_NORMAL) }
     var isRotationLocked by remember { mutableStateOf(false) }
     val isTorchOn by DeviceSystemController.isTorchEnabled.collectAsStateWithLifecycle()
 
@@ -169,6 +178,7 @@ fun ControlCenterOverlay(
         }
         isRotationLocked = disp.isRotationLocked
         volume = aud.mediaFraction
+        ringerMode = aud.ringerMode
     }
 
     LaunchedEffect(visible) {
@@ -203,6 +213,7 @@ fun ControlCenterOverlay(
             scaleOut(targetScale = 0.96f, animationSpec = HnmMotion.sheetSpring())
     ) {
         val sheetScrollState = rememberScrollState()
+        val sheetDragAnim = remember { Animatable(0f) }
         val nestedSwipeDismissConnection = remember {
             var unconsumedUpwardPx = 0f
             var dismissedByNested = false
@@ -212,8 +223,15 @@ fun ControlCenterOverlay(
                     source: NestedScrollSource
                 ): Offset {
                     if (available.y > 0f) {
-                        unconsumedUpwardPx = 0f
                         dismissedByNested = false
+                        if (unconsumedUpwardPx < 0f) {
+                            val consumedY = min(available.y, -unconsumedUpwardPx)
+                            unconsumedUpwardPx += consumedY
+                            val damped = unconsumedUpwardPx * 0.52f
+                            coroutineScope.launch { sheetDragAnim.snapTo(damped) }
+                            return Offset(0f, consumedY)
+                        }
+                        unconsumedUpwardPx = 0f
                     }
                     return Offset.Zero
                 }
@@ -227,10 +245,14 @@ fun ControlCenterOverlay(
                         available.y < 0f &&
                         !dismissedByNested
                     ) {
-                        unconsumedUpwardPx += available.y
-                        if (unconsumedUpwardPx < -85f) {
+                        unconsumedUpwardPx = (unconsumedUpwardPx + available.y).coerceAtLeast(-260f)
+                        val damped = unconsumedUpwardPx * 0.52f
+                        coroutineScope.launch { sheetDragAnim.snapTo(damped) }
+                        if (unconsumedUpwardPx < -92f) {
                             dismissedByNested = true
                             unconsumedUpwardPx = 0f
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            coroutineScope.launch { sheetDragAnim.snapTo(0f) }
                             currentOnDismiss()
                         }
                     } else if (available.y > 0f) {
@@ -245,6 +267,11 @@ fun ControlCenterOverlay(
                 ): Velocity {
                     unconsumedUpwardPx = 0f
                     dismissedByNested = false
+                    if (sheetDragAnim.value != 0f) {
+                        coroutineScope.launch {
+                            sheetDragAnim.animateTo(0f, HnmMotion.sheetSpring())
+                        }
+                    }
                     return Velocity.Zero
                 }
             }
@@ -262,12 +289,32 @@ fun ControlCenterOverlay(
                             upwardSwipePx = 0f
                             dismissedInGesture = false
                         },
+                        onDragEnd = {
+                            upwardSwipePx = 0f
+                            if (!dismissedInGesture && sheetDragAnim.value != 0f) {
+                                coroutineScope.launch {
+                                    sheetDragAnim.animateTo(0f, HnmMotion.sheetSpring())
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            upwardSwipePx = 0f
+                            if (!dismissedInGesture && sheetDragAnim.value != 0f) {
+                                coroutineScope.launch {
+                                    sheetDragAnim.animateTo(0f, HnmMotion.sheetSpring())
+                                }
+                            }
+                        },
                         onVerticalDrag = { change, dragAmount ->
                             if (!change.isConsumed && !dismissedInGesture) {
-                                upwardSwipePx += dragAmount
-                                if (upwardSwipePx < -85f) {
+                                upwardSwipePx = (upwardSwipePx + dragAmount).coerceIn(-260f, 0f)
+                                val damped = upwardSwipePx * 0.52f
+                                coroutineScope.launch { sheetDragAnim.snapTo(damped) }
+                                if (upwardSwipePx < -92f) {
                                     dismissedInGesture = true
                                     change.consume()
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    coroutineScope.launch { sheetDragAnim.snapTo(0f) }
                                     currentOnDismiss()
                                 }
                             }
@@ -293,6 +340,17 @@ fun ControlCenterOverlay(
             Modifier
         }
 
+        val ringerLabel = when (ringerMode) {
+            AudioManager.RINGER_MODE_VIBRATE -> "Titreşim"
+            AudioManager.RINGER_MODE_SILENT -> "Sessiz"
+            else -> "Sesli"
+        }
+        val ringerIcon = when (ringerMode) {
+            AudioManager.RINGER_MODE_VIBRATE -> Icons.Rounded.Vibration
+            AudioManager.RINGER_MODE_SILENT -> Icons.AutoMirrored.Rounded.VolumeOff
+            else -> Icons.AutoMirrored.Rounded.VolumeUp
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -302,6 +360,15 @@ fun ControlCenterOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .graphicsLayer {
+                        val dragY = sheetDragAnim.value
+                        translationY = dragY
+                        val progress = (-dragY / 150f).coerceIn(0f, 1f)
+                        val s = 1f - (progress * 0.032f)
+                        scaleX = s
+                        scaleY = s
+                        alpha = 1f - (progress * 0.22f)
+                    }
                     .verticalScroll(sheetScrollState)
                     .hnmSafeTopPadding()
                     .navigationBarsPadding()
@@ -323,32 +390,72 @@ fun ControlCenterOverlay(
                         Text(
                             text = "← Bildirim Merkezi",
                             style = MaterialTheme.typography.labelSmall,
-                            color = HnmPalette.AccentCyan,
+                            color = colors.accentCyan,
                             modifier = Modifier
                                 .padding(top = 2.dp)
                                 .clickable { onOpenNotificationCenter() }
                         )
                     }
-                    GlassSurface(
-                        shape = RoundedCornerShape(16.dp),
-                        tone = GlassTone.PILL,
-                        modifier = Modifier.clickable {
-                            onDismiss()
-                            onOpenHnmSettings()
-                        }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        GlassSurface(
+                            shape = RoundedCornerShape(16.dp),
+                            tone = GlassTone.PILL,
+                            modifier = Modifier.clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                val next = if (ringerMode == AudioManager.RINGER_MODE_NORMAL) {
+                                    AudioManager.RINGER_MODE_VIBRATE
+                                } else {
+                                    AudioManager.RINGER_MODE_NORMAL
+                                }
+                                ringerMode = next
+                                coroutineScope.launch {
+                                    val actual = withContext(Dispatchers.IO) {
+                                        DeviceSystemController.setRingerMode(context, next)
+                                        DeviceSystemController.readAudioSnapshot(context).ringerMode
+                                    }
+                                    ringerMode = actual
+                                }
+                            }
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Settings,
-                                contentDescription = "Ayarlar",
-                                tint = colors.textPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(text = "Ayarlar", style = MaterialTheme.typography.labelSmall)
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = ringerIcon,
+                                    contentDescription = ringerLabel,
+                                    tint = colors.accentCyan,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(text = ringerLabel, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+
+                        GlassSurface(
+                            shape = RoundedCornerShape(16.dp),
+                            tone = GlassTone.PILL,
+                            modifier = Modifier.clickable {
+                                onDismiss()
+                                onOpenHnmSettings()
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Settings,
+                                    contentDescription = "Ayarlar",
+                                    tint = colors.textPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(text = "Ayarlar", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
@@ -692,6 +799,27 @@ fun ControlCenterOverlay(
                         }
                     }
                 }
+
+                // Alt yukarı kaydırma / kapatma tutamacı
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onDismiss
+                        )
+                        .padding(top = 2.dp, bottom = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(44.dp)
+                            .height(4.5.dp)
+                            .clip(CircleShape)
+                            .background(colors.textPrimary.copy(alpha = 0.36f))
+                    )
+                }
             }
         }
     }
@@ -773,24 +901,54 @@ private fun VerticalGlassSlider(
     modifier: Modifier = Modifier
 ) {
     val colors = HnmTheme.colors
+    val haptics = LocalHapticFeedback.current
     var heightPx by remember { mutableFloatStateOf(1f) }
+    var isDraggingSlider by remember { mutableStateOf(false) }
     val currentOnFractionChange by rememberUpdatedState(onFractionChange)
     val safeFraction = if (fraction.isFinite()) fraction else 0.5f
     val clamped = safeFraction.coerceIn(0f, 1f)
+    val dragScaleState = animateFloatAsState(
+        targetValue = if (isDraggingSlider) 1.028f else 1f,
+        animationSpec = HnmMotion.iconPressSpring(),
+        label = "sliderDragScale"
+    )
 
     GlassSurface(
         modifier = modifier
+            .graphicsLayer {
+                val s = dragScaleState.value
+                scaleX = s
+                scaleY = s
+            }
             .onSizeChanged { heightPx = it.height.toFloat().coerceAtLeast(1f) }
             .pointerInput(Unit) {
+                var lastBoundaryTick = -1
+                fun dispatchSliderValue(rawY: Float) {
+                    val raw = 1f - (rawY / heightPx.coerceAtLeast(1f))
+                    if (!raw.isFinite()) return
+                    val next = raw.coerceIn(0f, 1f)
+                    val boundary = when {
+                        next <= 0.01f -> 0
+                        next >= 0.99f -> 100
+                        else -> -1
+                    }
+                    if (boundary != -1 && boundary != lastBoundaryTick) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                    lastBoundaryTick = boundary
+                    currentOnFractionChange(next)
+                }
                 detectVerticalDragGestures(
                     onDragStart = { offset ->
-                        val next = 1f - (offset.y / heightPx.coerceAtLeast(1f))
-                        if (next.isFinite()) currentOnFractionChange(next.coerceIn(0f, 1f))
+                        isDraggingSlider = true
+                        lastBoundaryTick = -1
+                        dispatchSliderValue(offset.y)
                     },
+                    onDragEnd = { isDraggingSlider = false },
+                    onDragCancel = { isDraggingSlider = false },
                     onVerticalDrag = { change, _ ->
                         change.consume()
-                        val next = 1f - (change.position.y / heightPx.coerceAtLeast(1f))
-                        if (next.isFinite()) currentOnFractionChange(next.coerceIn(0f, 1f))
+                        dispatchSliderValue(change.position.y)
                     }
                 )
             },
@@ -809,6 +967,30 @@ private fun VerticalGlassSlider(
                     .align(Alignment.BottomCenter)
                     .background(colors.verticalSliderFill)
             )
+            AnimatedVisibility(
+                visible = isDraggingSlider,
+                enter = fadeIn(animationSpec = HnmMotion.iconPressSpring()),
+                exit = fadeOut(animationSpec = HnmMotion.iconPressSpring()),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (colors.isDark) Color(0x990F172A) else Color(0xD8FFFFFF)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "%${(clamped * 100f).roundToInt()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+                }
+            }
             Icon(
                 imageVector = icon,
                 contentDescription = null,

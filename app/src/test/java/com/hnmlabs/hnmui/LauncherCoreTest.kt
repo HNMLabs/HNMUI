@@ -931,6 +931,100 @@ class LauncherCoreTest {
         assertTrue(compactSpec.glassOpacityFactor in 0.45f..1.40f)
     }
 
+    @Test
+    fun `spotlight math engine evaluates operator precedence, implicit parens, powers, decimal commas and rejects non-math queries`() {
+        val precedence = com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("10 + 2 * 5")
+        org.junit.Assert.assertNotNull(precedence)
+        assertEquals(20.0, precedence!!.value, 1e-9)
+        assertEquals("20", precedence.formattedResult)
+
+        val implicitParen = com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("2(3 + 4) + (480 + 320) / 4")
+        org.junit.Assert.assertNotNull(implicitParen)
+        assertEquals(214.0, implicitParen!!.value, 1e-9)
+
+        val powerAndX = com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("2^10 + 7x7")
+        org.junit.Assert.assertNotNull(powerAndX)
+        assertEquals(1073.0, powerAndX!!.value, 1e-9)
+        assertEquals("1.073", powerAndX.formattedResult)
+        assertEquals("1073", powerAndX.copyableValue)
+
+        val decimalComma = com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("12,5 * 4=")
+        org.junit.Assert.assertNotNull(decimalComma)
+        assertEquals(50.0, decimalComma!!.value, 1e-9)
+
+        // Uygulama adları, tekil sayılar, telefon ülke kodu ve sıfıra bölme güvenli şekilde null dönmeli
+        org.junit.Assert.assertNull(com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("Netflix"))
+        org.junit.Assert.assertNull(com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("Xbox"))
+        org.junit.Assert.assertNull(com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("2026"))
+        org.junit.Assert.assertNull(com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("+90"))
+        org.junit.Assert.assertNull(com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("%20"))
+        org.junit.Assert.assertNull(com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("100 / 0"))
+        org.junit.Assert.assertNull(
+            com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("((((((((((((((((((((((((((1+1))))))))))))))))))))))))))")
+        )
+    }
+
+    @Test
+    fun `spotlight math engine evaluates Turkish prefix and international postfix KDV and discount percentages`() {
+        val kdvTr = com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("1250 + %20")
+        org.junit.Assert.assertNotNull(kdvTr)
+        assertEquals(1500.0, kdvTr!!.value, 1e-9)
+        assertEquals("1.500", kdvTr.formattedResult)
+
+        val discountIntl = com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("800 - 15%")
+        org.junit.Assert.assertNotNull(discountIntl)
+        assertEquals(680.0, discountIntl!!.value, 1e-9)
+        assertEquals("680", discountIntl.formattedResult)
+
+        val shareOfTotal = com.hnmlabs.hnmui.core.text.SpotlightMathEngine.evaluate("%25 * 8400")
+        org.junit.Assert.assertNotNull(shareOfTotal)
+        assertEquals(2100.0, shareOfTotal!!.value, 1e-9)
+        assertEquals("2.100", shareOfTotal.formattedResult)
+    }
+
+    @Test
+    fun `app library alphabetical bucket preserves Turkish dotted I, dotless I, C, S, O, U and hashes digits`() {
+        assertEquals("İ", com.hnmlabs.hnmui.ui.surfaces.resolveAlphabeticalBucket("İşCep"))
+        assertEquals("İ", com.hnmlabs.hnmui.ui.surfaces.resolveAlphabeticalBucket("instagram"))
+        assertEquals("I", com.hnmlabs.hnmui.ui.surfaces.resolveAlphabeticalBucket("Işık Üniversitesi"))
+        assertEquals("Ç", com.hnmlabs.hnmui.ui.surfaces.resolveAlphabeticalBucket("çiçeksepeti"))
+        assertEquals("Ş", com.hnmlabs.hnmui.ui.surfaces.resolveAlphabeticalBucket("Şekerbank"))
+        assertEquals("#", com.hnmlabs.hnmui.ui.surfaces.resolveAlphabeticalBucket("112 Acil Yardım"))
+        assertEquals("#", com.hnmlabs.hnmui.ui.surfaces.resolveAlphabeticalBucket("   "))
+    }
+
+    @Test
+    fun `double tap home action defaults to SPOTLIGHT on legacy v0_3_4_1 JSON and round-trips all enum modes`() {
+        val json = kotlinx.serialization.json.Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
+        val legacyV0341 = """{"customization":{"gridColumns":4,"gridRows":6,"themeMode":"dark"}}"""
+        val decoded = json.decodeFromString(
+            com.hnmlabs.hnmui.model.PersistedHomeState.serializer(),
+            legacyV0341
+        )
+        assertEquals(
+            com.hnmlabs.hnmui.model.DoubleTapHomeAction.SPOTLIGHT,
+            decoded.customization.doubleTapAction
+        )
+        assertEquals(
+            com.hnmlabs.hnmui.model.HnmThemeMode.DARK,
+            decoded.customization.themeMode
+        )
+
+        for (action in com.hnmlabs.hnmui.model.DoubleTapHomeAction.entries) {
+            val state = decoded.copy(
+                customization = decoded.customization.copy(doubleTapAction = action)
+            )
+            val reDecoded = json.decodeFromString(
+                com.hnmlabs.hnmui.model.PersistedHomeState.serializer(),
+                json.encodeToString(com.hnmlabs.hnmui.model.PersistedHomeState.serializer(), state)
+            )
+            assertEquals(action, reDecoded.customization.doubleTapAction)
+        }
+    }
+
     private fun sampleApp(pkg: String, label: String, category: AppCategory): AppItem {
         return AppItem(
             key = AppComponentKey(packageName = pkg, className = "$pkg.MainActivity"),

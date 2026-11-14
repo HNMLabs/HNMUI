@@ -416,6 +416,13 @@ class HomeLayoutRepository(
         }
     }
 
+    suspend fun clearCompletedQuickNotes() {
+        mutateState { state ->
+            if (state.quickNotes.none { it.isDone }) state
+            else state.copy(quickNotes = state.quickNotes.filterNot { it.isDone })
+        }
+    }
+
     suspend fun bindWidgetId(appWidgetId: Int) {
         mutateState { state ->
             if (state.boundWidgetIds.contains(appWidgetId)) state

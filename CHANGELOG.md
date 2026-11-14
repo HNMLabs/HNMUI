@@ -5,6 +5,21 @@ All notable changes to **HNMUI** are documented in this file.
 
 ---
 
+## [0.3.4.2-alpha] — 2026-11-14 (Flagship Polish: Spotlight 2.0, App Library A–Z Rail, Rubber-Band Sheets & SpringBoard Ergonomics)
+
+### ✨ Added & Upgraded / Yeni Özellikler ve Amiral Gemisi Geliştirmeleri
+- **EN:** **Spotlight 2.0 (`SpotlightMathEngine` + Instant System Controls):** Added a zero-dependency, 100% offline arithmetic, power (`^`), implicit paren, and Turkish/international KDV & discount percentage calculator (`1250 + %20` → `1.500`, `800 - 15%` → `680`, `(480+320)/4`, `2^10`) with one-tap clipboard copy; added live System Quick Controls (Flashlight toggle, Dark/Light/System theme switcher, Wi-Fi/Bluetooth mini-panels, direct `SettingsRoute` deep-links), usage-frequency-weighted `"En İyi ↵"` Top Hit ranking, and scroll-to-hide keyboard.
+- **EN:** **App Library 2.0 (`AppLibraryPage`):** Added a frosted-glass segmented switcher (`Kategoriler` | `A–Z Liste`), a right-edge tactile iOS **A–Z Fast-Scrub Rail** with floating glass letter preview bubble & haptic ticks, Turkish `I`/`İ`/`Ç`/`Ş`/`Ö`/`Ü` alphabetical bucketing, aggregate unread notification badges on category pods, and tappable category titles.
+- **EN:** **Control Center Pro & 120 FPS Rubber-Band Sheet Physics (`ControlCenterOverlay` & `NotificationCenterOverlay`):** Added pure GPU draw-phase (`Animatable` inside `Modifier.graphicsLayer`, zero layout/composition invalidation) upward rubber-band sheet tracking & spring snap-back on both Control Center and Notification Center; added a live percentage HUD pill (`%68`) + `0%`/`100%` boundary haptics on vertical Brightness & Volume sliders, a live Sound Mode toggle pill (`Sesli` / `Titreşim` / `Sessiz`) in the Control Center header, and a bottom grabber pill.
+- **EN:** **SpringBoard Home Ergonomics (`HomeGridPage`, `LauncherBottomDockBar`, `HnmSettingsOverlay`):** Made the Home page indicator capsule interactive (tap or scrub horizontally across page dots with haptics to jump between pages) and added zero-single-tap-latency configurable **Double-Tap on Empty Home Screen** (`DoubleTapHomeAction`: *Spotlight*, *Control Center*, *Notification Center*, *Cycle Theme*, or *Off*) inside *HNM Settings → Home Screen, Folder & Dock*.
+- **EN:** **Today View & Reminders Polish + 25 Unit Tests:** Added one-tap *"Clear Completed"* actions in Today View Quick Notes and Notification Center Reminders, `ON_RESUME` battery/clock refresh on Today View, and expanded `LauncherCoreTest` to **25 automated unit tests**.
+- **TR:** **Spotlight 2.0 (Anlık Matematik & KDV Hesaplayıcı + Canlı Sistem Komutları):** Çevrimdışı dört işlem, üs alma (`^`), parantez ve Türkçe/uluslararası yüzde/KDV motoru (`1250 + %20` → `1.500`, `800 - 15%` → `680`, `%25 * 8400` → `2.100`) ile tek dokunuşla panoya kopyalama eklendi; Fener, Görünüm Modu, Wi-Fi/Bluetooth mini paneli ve HNM Ayarlar alt sayfa derin bağlantıları (`SettingsRoute`), kullanım sıklığı ağırlıklı `"En İyi ↵"` eşleşme rozeti ve kaydırırken otomatik klavye gizleme getirildi.
+- **TR:** **Uygulama Arşivi 2.0 (`Kategoriler` | `A–Z Liste` & Dokunsal Harf Rayı):** Sağ kenarda yüzen cam harf balonu ve Haptic geri bildirimli **iOS A–Z Hızlı Kaydırma Rayı**, Türkçe `İ`/`I`/`Ç`/`Ş` duyarlı alfabetik dizin, kategori kutularında toplam okunmamış bildirim rozeti ve dokunulabilir kategori başlıkları eklendi.
+- **TR:** **Denetim Merkezi Pro & 120 FPS Esnek Kapatma Fiziği:** Denetim Merkezi ve Bildirim Merkezi yukarı kaydırılırken **0 recomposition** ile parmağı takip eden GPU esneme (`rubber-band`) ve yaylı geri oturma fiziği eklendi; dikey Parlaklık/Ses sürgülerine canlı **`%` HUD göstergesi** ve uç nokta titreşimi, üst çubuğa canlı **Ses Modu (`Sesli` / `Titreşim` / `Sessiz`)** hapı ve alt kapatma tutamacı eklendi.
+- **TR:** **Ana Ekran Ergonomisi (Etkileşimli Sayfa Kapsülü & Çift Dokunuş Hareketi):** Dock üstündeki sayfa noktalarına dokunarak veya parmağı yatay kaydırarak sayfalar arasında anında geçiş, boş alana çift dokunuşla tek-tık gecikmesi olmadan açılan özelleştirilebilir hızlı eylem (*Spotlight*, *Denetim Merkezi*, *Bildirim Merkezi*, *Görünüm Değiştir*, *Kapalı*), tamamlanan notları tek dokunuşla temizleme ve **25 kapsamlı birim testi** eklendi.
+
+---
+
 ## [0.3.4.1-alpha] — 2026-11-14 (Deep Bug Hunt, Theme Zero-Storm & Gesture Precision Hotfix)
 
 ### 🐛 Fixed / Düzeltilen Hatalar

@@ -145,6 +145,27 @@ enum class HnmThemeMode(val titleTr: String, val shortTitleTr: String) {
 }
 
 /**
+ * Ana ekranda boş alana çift dokunulduğunda tetiklenecek hızlı eylem.
+ */
+@Serializable
+enum class DoubleTapHomeAction(val titleTr: String, val shortTitleTr: String) {
+    @SerialName("spotlight")
+    SPOTLIGHT(titleTr = "Spotlight Aramayı Aç", shortTitleTr = "Spotlight"),
+
+    @SerialName("control_center")
+    CONTROL_CENTER(titleTr = "Denetim Merkezini Aç", shortTitleTr = "Denetim"),
+
+    @SerialName("notification_center")
+    NOTIFICATION_CENTER(titleTr = "Bildirim Merkezini Aç", shortTitleTr = "Bildirim"),
+
+    @SerialName("theme_cycle")
+    THEME_CYCLE(titleTr = "Görünüm Modunu Değiştir", shortTitleTr = "Görünüm"),
+
+    @SerialName("none")
+    NONE(titleTr = "Kapalı", shortTitleTr = "Kapalı")
+}
+
+/**
  * Kullanıcının HNM Ayarlar içerisinden değiştirebildiği minimalist arayüz,
  * ızgara (7x7'ye kadar), klasör, Dock ve görünüm modu tercihleri.
  */
@@ -164,7 +185,8 @@ data class LauncherCustomizationSettings(
     val interceptSystemSettingsApp: Boolean = true,
     val hapticFeedbackEnabled: Boolean = true,
     val useIosStatusBar: Boolean = true,
-    val themeMode: HnmThemeMode = HnmThemeMode.SYSTEM
+    val themeMode: HnmThemeMode = HnmThemeMode.SYSTEM,
+    val doubleTapAction: DoubleTapHomeAction = DoubleTapHomeAction.SPOTLIGHT
 )
 
 /**

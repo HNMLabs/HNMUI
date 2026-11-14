@@ -3,6 +3,7 @@ package com.hnmlabs.hnmui.ui.overlays
 import android.media.AudioManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -108,6 +109,7 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.min
 
 /**
  * Sol üstten aşağı çekildiğinde One UI bildirim paneli yerine açılan iOS Cover Sheet
@@ -127,6 +129,7 @@ fun NotificationCenterOverlay(
     onAddQuickNote: (String) -> Unit,
     onToggleQuickNote: (String) -> Unit,
     onDeleteQuickNote: (String) -> Unit,
+    onClearCompletedNotes: () -> Unit = {},
     onDismissNotificationCard: (String) -> Unit,
     onClearAllNotificationCards: () -> Unit,
     onLaunchApp: (AppItem) -> Unit,
@@ -235,6 +238,7 @@ fun NotificationCenterOverlay(
             ) +
             scaleOut(targetScale = 0.97f, animationSpec = HnmMotion.sheetSpring())
     ) {
+        val sheetDragAnim = remember { Animatable(0f) }
         val nestedSwipeDismissConnection = remember {
             var unconsumedUpwardPx = 0f
             var dismissedByNested = false
@@ -244,8 +248,15 @@ fun NotificationCenterOverlay(
                     source: NestedScrollSource
                 ): Offset {
                     if (available.y > 0f) {
-                        unconsumedUpwardPx = 0f
                         dismissedByNested = false
+                        if (unconsumedUpwardPx < 0f) {
+                            val consumedY = min(available.y, -unconsumedUpwardPx)
+                            unconsumedUpwardPx += consumedY
+                            val damped = unconsumedUpwardPx * 0.52f
+                            coroutineScope.launch { sheetDragAnim.snapTo(damped) }
+                            return Offset(0f, consumedY)
+                        }
+                        unconsumedUpwardPx = 0f
                     }
                     return Offset.Zero
                 }
@@ -259,10 +270,14 @@ fun NotificationCenterOverlay(
                         available.y < 0f &&
                         !dismissedByNested
                     ) {
-                        unconsumedUpwardPx += available.y
-                        if (unconsumedUpwardPx < -90f) {
+                        unconsumedUpwardPx = (unconsumedUpwardPx + available.y).coerceAtLeast(-260f)
+                        val damped = unconsumedUpwardPx * 0.52f
+                        coroutineScope.launch { sheetDragAnim.snapTo(damped) }
+                        if (unconsumedUpwardPx < -92f) {
                             dismissedByNested = true
                             unconsumedUpwardPx = 0f
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            coroutineScope.launch { sheetDragAnim.snapTo(0f) }
                             currentOnDismiss()
                         }
                     } else if (available.y > 0f) {
@@ -277,6 +292,11 @@ fun NotificationCenterOverlay(
                 ): Velocity {
                     unconsumedUpwardPx = 0f
                     dismissedByNested = false
+                    if (sheetDragAnim.value != 0f) {
+                        coroutineScope.launch {
+                            sheetDragAnim.animateTo(0f, HnmMotion.sheetSpring())
+                        }
+                    }
                     return Velocity.Zero
                 }
             }
@@ -293,12 +313,32 @@ fun NotificationCenterOverlay(
                             upwardDragPx = 0f
                             dismissedInGesture = false
                         },
+                        onDragEnd = {
+                            upwardDragPx = 0f
+                            if (!dismissedInGesture && sheetDragAnim.value != 0f) {
+                                coroutineScope.launch {
+                                    sheetDragAnim.animateTo(0f, HnmMotion.sheetSpring())
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            upwardDragPx = 0f
+                            if (!dismissedInGesture && sheetDragAnim.value != 0f) {
+                                coroutineScope.launch {
+                                    sheetDragAnim.animateTo(0f, HnmMotion.sheetSpring())
+                                }
+                            }
+                        },
                         onVerticalDrag = { change, dragAmount ->
                             if (!change.isConsumed && !dismissedInGesture) {
-                                upwardDragPx += dragAmount
-                                if (upwardDragPx < -90f) {
+                                upwardDragPx = (upwardDragPx + dragAmount).coerceIn(-260f, 0f)
+                                val damped = upwardDragPx * 0.52f
+                                coroutineScope.launch { sheetDragAnim.snapTo(damped) }
+                                if (upwardDragPx < -92f) {
                                     dismissedInGesture = true
                                     change.consume()
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    coroutineScope.launch { sheetDragAnim.snapTo(0f) }
                                     currentOnDismiss()
                                 }
                             }
@@ -323,6 +363,15 @@ fun NotificationCenterOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer {
+                        val dragY = sheetDragAnim.value
+                        translationY = dragY
+                        val progress = (-dragY / 150f).coerceIn(0f, 1f)
+                        val s = 1f - (progress * 0.032f)
+                        scaleX = s
+                        scaleY = s
+                        alpha = 1f - (progress * 0.22f)
+                    }
                     .hnmSafeTopPadding()
                     .navigationBarsPadding()
                     .padding(horizontal = 20.dp),
@@ -613,11 +662,29 @@ fun NotificationCenterOverlay(
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    Text(
-                                        text = "${quickNotes.count { !it.isDone }} aktif",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = HnmPalette.AccentCyan
-                                    )
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (quickNotes.any { it.isDone }) {
+                                            Text(
+                                                text = "Tamamlananları Sil",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = colors.textMuted,
+                                                modifier = Modifier.clickable {
+                                                    haptics.performHapticFeedback(
+                                                        HapticFeedbackType.TextHandleMove
+                                                    )
+                                                    onClearCompletedNotes()
+                                                }
+                                            )
+                                        }
+                                        Text(
+                                            text = "${quickNotes.count { !it.isDone }} aktif",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = colors.accentCyan
+                                        )
+                                    }
                                 }
 
                                 Row(
