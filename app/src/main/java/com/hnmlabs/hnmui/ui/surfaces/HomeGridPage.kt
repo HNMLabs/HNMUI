@@ -1,5 +1,6 @@
 package com.hnmlabs.hnmui.ui.surfaces
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -13,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,7 +43,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,7 +57,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
@@ -77,6 +86,7 @@ import kotlin.math.roundToInt
 
 /**
  * Ana ekran ızgara sayfası (4x4'ten 7x7'ye kadar dinamik ızgara ve 120 FPS sürükle-bırak destekli).
+ * Boş alana çift dokunma -> Kullanıcının seçtiği hızlı eylem (0ms tek-tık gecikmeli).
  * Boş alana uzun basma -> Düzenleme (Jiggle) Modu.
  * İkona basılı tutup hareket ettirme -> Haptic Menü'den kesintisiz sürüklemeye geçiş.
  */
@@ -102,10 +112,12 @@ fun HomeGridPage(
     onOpenHnmSettings: () -> Unit,
     onToggleEditMode: () -> Unit,
     onPickWallpaper: () -> Unit,
+    onEmptyDoubleTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = HnmTheme.colors
     val haptics = LocalHapticFeedback.current
+    var lastEmptyTapUptimeMs by remember { mutableLongStateOf(0L) }
 
     val bottomDockClearanceDp = if (gridSpec.dockVisible) {
         (134 * gridSpec.dockScaleFactor).roundToInt().coerceIn(108, 168).dp
@@ -124,10 +136,24 @@ fun HomeGridPage(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = {
-                    if (isEditMode && !dragController.isDragging) onToggleEditMode()
+                    if (dragController.isDragging) return@combinedClickable
+                    if (isEditMode) {
+                        lastEmptyTapUptimeMs = 0L
+                        onToggleEditMode()
+                    } else {
+                        val now = SystemClock.uptimeMillis()
+                        if (now - lastEmptyTapUptimeMs in 45L..285L) {
+                            lastEmptyTapUptimeMs = 0L
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onEmptyDoubleTap()
+                        } else {
+                            lastEmptyTapUptimeMs = now
+                        }
+                    }
                 },
                 onLongClick = {
                     if (!dragController.isDragging) {
+                        lastEmptyTapUptimeMs = 0L
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         onToggleEditMode()
                     }
@@ -446,6 +472,7 @@ fun LauncherBottomDockBar(
     cachedIconProvider: (AppComponentKey) -> ImageBitmap?,
     loadIconSuspend: suspend (AppComponentKey) -> ImageBitmap?,
     onSearchPillClick: () -> Unit,
+    onSelectHomePage: (Int) -> Unit = {},
     onAppClick: (AppItem) -> Unit,
     onAppLongPress: (AppItem) -> Unit,
     onDismissQuickMenuAndEnterEdit: () -> Unit,
@@ -454,6 +481,8 @@ fun LauncherBottomDockBar(
     modifier: Modifier = Modifier
 ) {
     val colors = HnmTheme.colors
+    val haptics = LocalHapticFeedback.current
+    val currentOnSelectHomePage by rememberUpdatedState(onSelectHomePage)
     val scale = gridSpec.dockScaleFactor.coerceIn(0.75f, 1.25f)
     val outerHPad = (16f / scale).roundToInt().coerceIn(8, 22).dp
     val innerHPad = (16f * scale).roundToInt().coerceIn(10, 22).dp
@@ -502,7 +531,7 @@ fun LauncherBottomDockBar(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // iOS tarzı "Ara" (Spotlight) hapı ve akıcı animasyonlu sayfa kapsülleri
+        // iOS tarzı "Ara" (Spotlight) hapı ve dokunmatik / kaydırmalı sayfa kapsülleri
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -531,33 +560,73 @@ fun LauncherBottomDockBar(
             }
 
             if (totalHomePages > 1) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                var capsuleWidthPx by remember { mutableFloatStateOf(1f) }
+                GlassSurface(
+                    shape = RoundedCornerShape(16.dp),
+                    tone = GlassTone.PILL,
+                    modifier = Modifier
+                        .onSizeChanged {
+                            capsuleWidthPx = it.width.toFloat().coerceAtLeast(1f)
+                        }
+                        .pointerInput(totalHomePages) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                down.consume()
+                                var lastDispatched = -1
+                                fun selectAt(xPx: Float) {
+                                    val fraction = (xPx / capsuleWidthPx.coerceAtLeast(1f))
+                                        .coerceIn(0f, 0.9999f)
+                                    val targetIdx = (fraction * totalHomePages).toInt()
+                                        .coerceIn(0, totalHomePages - 1)
+                                    if (targetIdx != lastDispatched) {
+                                        lastDispatched = targetIdx
+                                        haptics.performHapticFeedback(
+                                            HapticFeedbackType.TextHandleMove
+                                        )
+                                        currentOnSelectHomePage(targetIdx)
+                                    }
+                                }
+                                selectAt(down.position.x)
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                        ?: break
+                                    if (!change.pressed) break
+                                    change.consume()
+                                    selectAt(change.position.x)
+                                }
+                            }
+                        }
                 ) {
-                    repeat(totalHomePages) { idx ->
-                        val active = idx == currentHomePageIndex
-                        val pillWidth by animateDpAsState(
-                            targetValue = if (active) 16.dp else 6.dp,
-                            animationSpec = HnmMotion.slotHighlightSpring(),
-                            label = "pageIndicatorWidth_$idx"
-                        )
-                        val pillColor by animateColorAsState(
-                            targetValue = if (active) {
-                                colors.onWallpaperPrimary
-                            } else {
-                                colors.onWallpaperSecondary.copy(alpha = 0.38f)
-                            },
-                            animationSpec = HnmMotion.slotHighlightSpring(),
-                            label = "pageIndicatorColor_$idx"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .width(pillWidth)
-                                .height(6.dp)
-                                .clip(CircleShape)
-                                .background(pillColor)
-                        )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        repeat(totalHomePages) { idx ->
+                            val active = idx == currentHomePageIndex
+                            val pillWidth by animateDpAsState(
+                                targetValue = if (active) 16.dp else 6.dp,
+                                animationSpec = HnmMotion.slotHighlightSpring(),
+                                label = "pageIndicatorWidth_$idx"
+                            )
+                            val pillColor by animateColorAsState(
+                                targetValue = if (active) {
+                                    colors.textPrimary
+                                } else {
+                                    colors.textMuted.copy(alpha = 0.45f)
+                                },
+                                animationSpec = HnmMotion.slotHighlightSpring(),
+                                label = "pageIndicatorColor_$idx"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .width(pillWidth)
+                                    .height(6.dp)
+                                    .clip(CircleShape)
+                                    .background(pillColor)
+                            )
+                        }
                     }
                 }
             }
