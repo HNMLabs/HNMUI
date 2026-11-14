@@ -78,6 +78,7 @@ import com.hnmlabs.hnmui.ui.theme.HnmMotion
 import com.hnmlabs.hnmui.ui.theme.HnmTheme
 import com.hnmlabs.hnmui.widget.LauncherWidgetHostManager
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
@@ -238,13 +239,18 @@ fun LauncherScreen(
     }
 
     // Fiziksel/jest Home tuşu sinyali geldiğinde tüm panelleri kapatıp ana sayfaya yay animasyonuyla dön
+    // KRİTİK: Kullanıcı kaydırma sürerken ekrana dokunursa Pager MutationInterruptedException (CancellationException)
+    // fırlatır; runCatching + ensureActive sayesinde Home tuşu dinleyicisi (collect) asla kalıcı olarak ölmez!
     LaunchedEffect(viewModel) {
         viewModel.scrollToPrimaryHomeSignal.collect {
             dragController.cancelDrag()
-            pagerState.animateScrollToPage(
-                page = primaryHomeIndex,
-                animationSpec = HnmMotion.sheetSpring()
-            )
+            runCatching {
+                pagerState.animateScrollToPage(
+                    page = primaryHomeIndex,
+                    animationSpec = HnmMotion.sheetSpring()
+                )
+            }
+            ensureActive()
         }
     }
 
@@ -260,10 +266,12 @@ fun LauncherScreen(
             state.isEditMode -> viewModel.toggleEditMode()
             pagerState.currentPage != primaryHomeIndex -> {
                 coroutineScope.launch {
-                    pagerState.animateScrollToPage(
-                        page = primaryHomeIndex,
-                        animationSpec = HnmMotion.sheetSpring()
-                    )
+                    runCatching {
+                        pagerState.animateScrollToPage(
+                            page = primaryHomeIndex,
+                            animationSpec = HnmMotion.sheetSpring()
+                        )
+                    }
                 }
             }
         }
@@ -305,10 +313,12 @@ fun LauncherScreen(
                 .coerceIn(1, homePageCount)
             if (targetPagerPage != pagerState.currentPage) {
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                pagerState.animateScrollToPage(
-                    page = targetPagerPage,
-                    animationSpec = HnmMotion.sheetSpring()
-                )
+                runCatching {
+                    pagerState.animateScrollToPage(
+                        page = targetPagerPage,
+                        animationSpec = HnmMotion.sheetSpring()
+                    )
+                }
                 dragController.updateDragPosition(
                     rootPos = dragController.pointerInRoot,
                     currentHomePageIndex = (targetPagerPage - 1).coerceAtLeast(0),
@@ -356,11 +366,18 @@ fun LauncherScreen(
     }
 
     val cutoutTopDp = WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
+    val reservedTopBarDp = if (state.customization.useIosStatusBar) {
+        androidx.compose.ui.unit.max(cutoutTopDp + 4.dp, 42.dp)
+    } else {
+        0.dp
+    }
     val effectiveTopStripPx = remember(density, cutoutTopDp) {
         with(density) { max((cutoutTopDp + 52.dp).toPx(), 86.dp.toPx()) }
     }
-    val topPullThresholdPx = remember(density) { with(density) { 14.dp.toPx() } }
-    val homeTopZoneThresholdPx = remember(density) { with(density) { 20.dp.toPx() } }
+    // KRİTİK: Üst çubuk çekme eşiği touchSlop (~8dp) ile hizalı tutulur ki hızlı tıklama ile kısa
+    // aşağı kaydırma (flick) arasında hiçbir "ölü bölge" (dead-zone) kalmasın!
+    val topPullThresholdPx = remember(density) { with(density) { 8.dp.toPx() } }
+    val homeTopZoneThresholdPx = remember(density) { with(density) { 18.dp.toPx() } }
     val spotlightThresholdPx = remember(density) { with(density) { 28.dp.toPx() } }
 
     val latestTopStripPx by rememberUpdatedState(effectiveTopStripPx)
@@ -402,7 +419,7 @@ fun LauncherScreen(
     CompositionLocalProvider(
         LocalHapticFeedback provides haptics,
         LocalGlassOpacityFactor provides state.gridSpec.glassOpacityFactor,
-        LocalHnmTopBarHeight provides if (state.customization.useIosStatusBar) 42.dp else 0.dp,
+        LocalHnmTopBarHeight provides reservedTopBarDp,
         LocalEditJigglePhase provides sharedJigglePhaseState
     ) {
         Box(
@@ -416,6 +433,8 @@ fun LauncherScreen(
                 // Kök Initial-pass aşağı çekme yakalayıcısı: HorizontalPager ve ikonlardan ÖNCE çalışır!
                 .pointerInput(Unit) {
                     val touchSlop = viewConfiguration.touchSlop
+                    val effectiveTopThreshold = kotlin.math.min(topPullThresholdPx, touchSlop * 0.9f)
+                        .coerceAtLeast(1f)
                     awaitEachGesture {
                         // KRİTİK: awaitFirstDown her döngüde İLK satırda çağrılmalı ki parmak basılana kadar
                         // coroutine askıda (suspend) kalsın; aksi halde panel açıkken Main Thread sonsuz döngüye girer!
@@ -455,7 +474,7 @@ fun LauncherScreen(
                                 rootWidthPx = rootWidthPx,
                                 rootHeightPx = rootHeightPx,
                                 effectiveTopStripPx = latestTopStripPx,
-                                topPullThresholdPx = topPullThresholdPx,
+                                topPullThresholdPx = effectiveTopThreshold,
                                 homePullThresholdPx = homeTopZoneThresholdPx,
                                 spotlightThresholdPx = spotlightThresholdPx,
                                 touchSlopPx = touchSlop,

@@ -5,6 +5,22 @@ All notable changes to **HNMUI** are documented in this file.
 
 ---
 
+## [0.3.4.1-alpha] — 2026-11-14 (Deep Bug Hunt, Theme Zero-Storm & Gesture Precision Hotfix)
+
+### 🐛 Fixed / Düzeltilen Hatalar
+- **EN:** **Eliminated 45× Full-Tree Theme Recomposition Storm (`HnmTheme`):** Replaced `staticCompositionLocalOf` on `LocalHnmColors` with tracked `compositionLocalOf`, keyed `MaterialTheme` `colorScheme` and `typography` strictly on `isDark` (1 invalidation instead of ~45 per transition), and drove live default text animation through tracked `LocalContentColor`.
+- **EN:** **Fixed Broken "Create New Folder" Quick Menu Action (`HomeLayoutRepository` & `LauncherViewModel`):** Fixed `pruneUninstalledAndNormalize` and `stripAppFromPages` prematurely collapsing intentional 1-app folders created via *"Yeni Klasör Oluştur"* back into `AppTile`s; newly created folders now persist cleanly, survive unrelated Dock/grid drags, and open immediately for inline renaming.
+- **EN:** **Protected Physical/Gesture Home Button Signal Against Mid-Scroll Touch Interruption (`LauncherScreen`):** Guarded `pagerState.animateScrollToPage` inside `scrollToPrimaryHomeSignal.collect` with `runCatching` + `ensureActive()`, preventing `MutationInterruptedException` from permanently terminating the Home button listener.
+- **EN:** **Eliminated `8dp–14dp` Top Status Bar Flick Dead-Zone & Corner Cutout Overlap (`LauncherScreen` & `HnmIosStatusBar`):** Aligned `topPullThresholdPx` with `touchSlop` (`min(8.dp, touchSlop * 0.9f)`) so short downward flicks on `HnmIosStatusBar` open Control Center / Notification Center 100% of the time, and applied dynamic `displayCutout` top/left/right safe padding.
+- **EN:** **Fixed Upward Swipe-to-Dismiss on Scrollable Control Center & Notification Center (`ControlCenterOverlay` & `NotificationCenterOverlay`):** Added `NestedScrollConnection` post-scroll upward drag capture so swiping up anywhere over the scrollable Control Center sheet or Notification `LazyColumn` dismisses the overlay smoothly, alongside `ON_RESUME` battery/ringer sync and outside-tap focus clearing.
+- **EN:** **Overlay, System Bar & R8 Hardening (`FolderModalOverlay`, `QuickActionMenuOverlay`, `SpotlightOverlay`, `LauncherActivity`, `proguard-rules.pro`):** Auto-saved edited folder names on Android Back press / app launch; added multi-folder move support (up to 4 folders) + vertical scroll + frozen exit snapshot in `QuickActionMenuOverlay`; retracted soft keyboard immediately on Spotlight close; synced Light/Dark status & navigation bar icon contrast across `onResume` and transient swipes; hardened R8 keep rules for `@Serializable` sealed interfaces/enums; and expanded `LauncherCoreTest` to **21 automated unit tests**.
+- **TR:** **Açık ↔ Koyu Geçişindeki 45× Tam Ağaç Recomposition Fırtınası Giderildi (`HnmTheme`):** `LocalHnmColors` `compositionLocalOf` yapısına geçirildi, `MaterialTheme` statik sağlayıcıları yalnızca `isDark` değişimine kilitlendi ve metin geçişleri izlenebilir `LocalContentColor` ile sıfır takılmalı **120 FPS** akışa alındı.
+- **TR:** **"Yeni Klasör Oluştur" Klasör Dağılma Hatası Çözüldü (`HomeLayoutRepository` & `LauncherViewModel`):** Hızlı menüden oluşturulan 1 uygulamalı klasörlerin `pruneUninstalledAndNormalize` ve `stripAppFromPages` tarafından anında tekil ikona dönüştürülmesi hatası düzeltildi; yeni klasör artık korunur ve anında yeniden adlandırma penceresiyle açılır.
+- **TR:** **Home Tuşu Dinleyicisi & Üst Çubuk Kısa Çekme Ölü Bölgesi Giderildi (`LauncherScreen` & `HnmIosStatusBar`):** Kaydırma sırasında ekrana dokunulduğunda Home tuşu sinyal dinleyicisinin kalıcı olarak durması engellendi; üst çubukta tıklama ile çekme arasındaki `8dp–14dp` ölü bölge sıfırlandı ve köşe kamera delikleri (`displayCutout`) için yatay/dikey güvenli boşluk eklendi.
+- **TR:** **Denetim Merkezi & Bildirim Merkezi Yukarı Kaydırarak Kapatma Düzeltildi:** Kaydırılabilir kart listelerinin yukarı kapatma hareketini yutması `NestedScrollConnection` ile çözüldü; klasör adı geri tuşunda otomatik kaydedilir hale getirildi, hızlı menüye çoklu klasöre taşıma + dikey kaydırma eklendi, Spotlight kapanışında klavye anında gizlendi ve birim test paketi **21 kapsamlı teste** çıkarıldı.
+
+---
+
 ## [0.3.4-alpha] — 2026-11-13 (System Adaptive Glass & Zero-Miss Control Center)
 
 ### 🌗 System Adaptive Appearance Engine / Sistem Uyumlu Açık & Koyu Cam Motoru

@@ -260,7 +260,7 @@ class LauncherViewModel(
         )
 
         val suggestedApps = libraryGroups
-            .firstOrNull()
+            .firstOrNull { it.category == com.hnmlabs.hnmui.model.AppCategory.SUGGESTED }
             ?.apps
             ?.take(4)
             ?: badgedApps.take(4)
@@ -685,12 +685,26 @@ class LauncherViewModel(
     }
 
     fun createNewFolderWithApp(app: AppItem) {
+        val defaultTitle = app.category.titleTr
         viewModelScope.launch {
-            layoutRepository.createOrAddToFolder(
+            val folderId = layoutRepository.createOrAddToFolder(
                 appKey = app.key,
                 targetFolderId = null,
-                folderTitle = app.category.titleTr
+                folderTitle = defaultTitle
             )
+            if (folderId != null) {
+                overlayState.update {
+                    it.copy(
+                        openFolderModal = ActiveFolderModal(
+                            folderId = folderId,
+                            title = defaultTitle,
+                            isEditableTitle = true,
+                            apps = listOf(app)
+                        ),
+                        quickMenu = null
+                    )
+                }
+            }
         }
     }
 

@@ -78,6 +78,32 @@ fun FolderModalOverlay(
     ) {
         val focusManager = LocalFocusManager.current
         var draftTitle by remember(title) { mutableStateOf(title) }
+        var committedTitle by remember(title) { mutableStateOf(title) }
+        val latestDraft by androidx.compose.runtime.rememberUpdatedState(draftTitle)
+        val latestCommitted by androidx.compose.runtime.rememberUpdatedState(committedTitle)
+        val latestIsEditable by androidx.compose.runtime.rememberUpdatedState(isEditableTitle)
+        val latestOnRename by androidx.compose.runtime.rememberUpdatedState(onRenameTitle)
+
+        fun commitPendingRenameIfNeeded() {
+            if (latestIsEditable && latestDraft != latestCommitted) {
+                committedTitle = latestDraft
+                latestOnRename(latestDraft)
+            }
+        }
+
+        androidx.compose.runtime.LaunchedEffect(visible) {
+            if (!visible) {
+                commitPendingRenameIfNeeded()
+                focusManager.clearFocus()
+            }
+        }
+
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            onDispose {
+                commitPendingRenameIfNeeded()
+            }
+        }
+
         val safeCols = columns.coerceIn(3, 7)
 
         val outerHorizontalPad = when (safeCols) {
@@ -126,9 +152,7 @@ fun FolderModalOverlay(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = {
-                                if (isEditableTitle && draftTitle != title) {
-                                    onRenameTitle(draftTitle)
-                                }
+                                commitPendingRenameIfNeeded()
                                 onDismiss()
                             }
                         )
@@ -147,7 +171,7 @@ fun FolderModalOverlay(
                             Modifier.clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                onClick = {}
+                                onClick = { focusManager.clearFocus() }
                             )
                         } else {
                             Modifier
@@ -168,7 +192,7 @@ fun FolderModalOverlay(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(
                             onDone = {
-                                onRenameTitle(draftTitle)
+                                commitPendingRenameIfNeeded()
                                 focusManager.clearFocus()
                             }
                         ),
@@ -206,8 +230,14 @@ fun FolderModalOverlay(
                                 onGlassSurface = true,
                                 cachedIconProvider = cachedIconProvider,
                                 loadIconSuspend = loadIconSuspend,
-                                onClick = { onLaunchApp(app) },
-                                onLongClick = { onAppLongPress(app) }
+                                onClick = {
+                                    commitPendingRenameIfNeeded()
+                                    onLaunchApp(app)
+                                },
+                                onLongClick = {
+                                    commitPendingRenameIfNeeded()
+                                    onAppLongPress(app)
+                                }
                             )
                         }
                     }

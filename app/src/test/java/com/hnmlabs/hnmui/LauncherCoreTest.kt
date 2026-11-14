@@ -628,6 +628,309 @@ class LauncherCoreTest {
         )
     }
 
+    @Test
+    fun `intentional 1-app folder survives normalization and unrelated drag while uninstalled 2-app folder collapses`() {
+        val workApp = AppComponentKey("com.slack", "Main")
+        val camera = AppComponentKey("com.camera", "Main")
+        val gallery = AppComponentKey("com.gallery", "Main")
+        val removedApp = AppComponentKey("com.uninstalled", "Main")
+
+        val stateWithOneAppFolder = com.hnmlabs.hnmui.model.PersistedHomeState(
+            dock = emptyList(),
+            pages = listOf(
+                com.hnmlabs.hnmui.model.HomePageModel(
+                    id = "page_1",
+                    items = listOf(
+                        // Kullanıcının "Yeni Klasör Oluştur" ile kurduğu 1 uygulamalı klasör
+                        HomeGridItem.FolderTile(
+                            id = "folder_intentional_single",
+                            title = "Üretkenlik",
+                            apps = listOf(workApp)
+                        ),
+                        // 2 uygulamalı klasörden biri cihazdan kaldırıldığında tek ikona düşmeli
+                        HomeGridItem.FolderTile(
+                            id = "folder_shrunk",
+                            title = "Medya",
+                            apps = listOf(camera, removedApp)
+                        ),
+                        HomeGridItem.AppTile(gallery)
+                    )
+                )
+            )
+        )
+
+        val normalized = HomeLayoutRepository.pruneUninstalledAndNormalize(
+            state = stateWithOneAppFolder,
+            installedIds = setOf(workApp.stableId, camera.stableId, gallery.stableId),
+            maxPerPage = 24
+        )
+
+        val pageItems = normalized.pages.first().items
+        assertEquals(3, pageItems.size)
+        // 1) Bilinçli oluşturulan 1 uygulamalı klasör ASLA kendiliğinden dağılmamalı!
+        val preservedFolder = pageItems[0] as HomeGridItem.FolderTile
+        assertEquals("folder_intentional_single", preservedFolder.id)
+        assertEquals(listOf(workApp), preservedFolder.apps)
+
+        // 2) Silinen uygulama yüzünden 1'e düşen klasör ise tekil ikona dönüşmeli
+        assertEquals(HomeGridItem.AppTile(camera), pageItems[1])
+        assertEquals(HomeGridItem.AppTile(gallery), pageItems[2])
+
+        // 3) Başka bir uygulama (gallery) Dock'a taşındığında 1 uygulamalı klasör bozulmamalı
+        val afterUnrelatedDockMove = HomeLayoutRepository.applyDragDropToState(
+            state = normalized,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(
+                pageIndex = 0,
+                slotIndex = 2,
+                expectedItemId = "app:${gallery.stableId}"
+            ),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.DockCell(0),
+            maxPerPage = 24,
+            maxDockItems = 4
+        )
+        assertEquals(listOf(gallery), afterUnrelatedDockMove.dock)
+        val stillFolder = afterUnrelatedDockMove.pages.first().items.first() as HomeGridItem.FolderTile
+        assertEquals("folder_intentional_single", stillFolder.id)
+        assertEquals(listOf(workApp), stillFolder.apps)
+    }
+
+    @Test
+    fun `short downward flick inside top status bar opens Control Center and Notification Center with zero tap dead-zone`() {
+        val w = 1080f
+        val h = 2400f
+        val topStrip = 128f
+        val slop = 24f // ~8dp @ 3x density
+        val alignedTopThreshold = kotlin.math.min(24f, slop * 0.9f) // 21.6px — sıfır ölü bölge!
+
+        // 9dp (~27px) kısa sağ üst flick: eskiden clickable iptal olup 14dp (42px) altında kaldığı için
+        // açılmıyordu; artık %100 Denetim Merkezi açmalı!
+        assertEquals(
+            com.hnmlabs.hnmui.ui.DownwardPullAction.OPEN_CONTROL_CENTER,
+            com.hnmlabs.hnmui.ui.classifyDownwardPull(
+                startX = w * 0.84f,
+                startY = 48f,
+                dx = -6f,
+                dy = 27f,
+                rootWidthPx = w,
+                rootHeightPx = h,
+                effectiveTopStripPx = topStrip,
+                topPullThresholdPx = alignedTopThreshold,
+                homePullThresholdPx = 54f,
+                spotlightThresholdPx = 84f,
+                touchSlopPx = slop,
+                isOnHomePages = true,
+                isEditMode = false
+            )
+        )
+
+        // 9dp (~27px) kısa sol üst flick -> Bildirim Merkezi
+        assertEquals(
+            com.hnmlabs.hnmui.ui.DownwardPullAction.OPEN_NOTIFICATION_CENTER,
+            com.hnmlabs.hnmui.ui.classifyDownwardPull(
+                startX = w * 0.18f,
+                startY = 48f,
+                dx = 5f,
+                dy = 27f,
+                rootWidthPx = w,
+                rootHeightPx = h,
+                effectiveTopStripPx = topStrip,
+                topPullThresholdPx = alignedTopThreshold,
+                homePullThresholdPx = 54f,
+                spotlightThresholdPx = 84f,
+                touchSlopPx = slop,
+                isOnHomePages = false,
+                isEditMode = false
+            )
+        )
+
+        // Yukarı kaydırma hareketi anında ABORT dönmeli
+        assertEquals(
+            com.hnmlabs.hnmui.ui.DownwardPullAction.ABORT,
+            com.hnmlabs.hnmui.ui.classifyDownwardPull(
+                startX = w * 0.80f,
+                startY = 48f,
+                dx = 0f,
+                dy = -30f,
+                rootWidthPx = w,
+                rootHeightPx = h,
+                effectiveTopStripPx = topStrip,
+                topPullThresholdPx = alignedTopThreshold,
+                homePullThresholdPx = 54f,
+                spotlightThresholdPx = 84f,
+                touchSlopPx = slop,
+                isOnHomePages = true,
+                isEditMode = false
+            )
+        )
+    }
+
+    @Test
+    fun `persisted home state round-trip JSON serialization preserves folders, dock, quick notes, widgets, and enums`() {
+        val json = kotlinx.serialization.json.Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
+        val app1 = AppComponentKey("com.whatsapp", "com.whatsapp.Main")
+        val app2 = AppComponentKey("com.spotify.music", "com.spotify.Main")
+        val app3 = AppComponentKey("com.pozitron.iscep", "com.pozitron.Main")
+
+        for (mode in com.hnmlabs.hnmui.model.HnmThemeMode.entries) {
+            val original = com.hnmlabs.hnmui.model.PersistedHomeState(
+                dock = listOf(app1),
+                pages = listOf(
+                    com.hnmlabs.hnmui.model.HomePageModel(
+                        id = "page_1",
+                        items = listOf(
+                            HomeGridItem.AppTile(app2),
+                            HomeGridItem.FolderTile(
+                                id = "folder_fin",
+                                title = "Finans",
+                                apps = listOf(app3)
+                            )
+                        )
+                    )
+                ),
+                quickNotes = listOf(
+                    com.hnmlabs.hnmui.model.QuickNoteItem(id = "n1", text = "Test notu", isDone = true)
+                ),
+                boundWidgetIds = listOf(101, 202),
+                launchCounts = mapOf(app1.stableId to 9),
+                customization = com.hnmlabs.hnmui.model.LauncherCustomizationSettings(
+                    gridColumns = 5,
+                    gridRows = 6,
+                    themeMode = mode
+                ),
+                hasInjectedHnmSettingsTile = true
+            )
+
+            val encoded = json.encodeToString(
+                com.hnmlabs.hnmui.model.PersistedHomeState.serializer(),
+                original
+            )
+            val decoded = json.decodeFromString(
+                com.hnmlabs.hnmui.model.PersistedHomeState.serializer(),
+                encoded
+            )
+            assertEquals(original, decoded)
+        }
+    }
+
+    @Test
+    fun `cross-page drag, folder merge deduplication, self-drop no-op, and page overflow spill maintain layout invariants`() {
+        val apps = (1..10).map { idx -> AppComponentKey("com.pkg$idx", "Main") }
+        val initial = com.hnmlabs.hnmui.model.PersistedHomeState(
+            dock = emptyList(),
+            pages = listOf(
+                com.hnmlabs.hnmui.model.HomePageModel(
+                    id = "page_1",
+                    items = apps.map { HomeGridItem.AppTile(it) }
+                )
+            )
+        )
+
+        // 1) maxPerPage = 8 olduğunda 10 öğe otomatik olarak 8 + 2 şeklinde 2 sayfaya taşmalı
+        val spilledPages = HomeLayoutRepository.normalizePages(initial.pages, maxPerPage = 8)
+        assertEquals(2, spilledPages.size)
+        assertEquals(8, spilledPages[0].items.size)
+        assertEquals(2, spilledPages[1].items.size)
+
+        // 2) Bir uygulamayı kendi üstüne bırakarak klasör oluşturma denemesi güvenli no-op olmalı
+        val spilledState = initial.copy(pages = spilledPages)
+        val selfDrop = HomeLayoutRepository.applyDragDropToState(
+            state = spilledState,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(0, 0),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.CreateFolderWithApp(
+                targetAppKey = apps[0],
+                folderTitle = "Klasör"
+            ),
+            maxPerPage = 8,
+            maxDockItems = 4
+        )
+        assertEquals(spilledState, selfDrop)
+
+        // 3) Sayfa 2'deki öğeyi Sayfa 1'deki öğeyle birleştirip klasör oluşturma ve tekrarlı eklemeyi önleme
+        val withFolder = HomeLayoutRepository.applyDragDropToState(
+            state = spilledState,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(
+                pageIndex = 1,
+                slotIndex = 0,
+                expectedItemId = "app:${apps[8].stableId}"
+            ),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.CreateFolderWithApp(
+                targetAppKey = apps[0],
+                folderTitle = "Grup"
+            ),
+            maxPerPage = 8,
+            maxDockItems = 4
+        )
+        val folder = withFolder.pages[0].items[0] as HomeGridItem.FolderTile
+        assertEquals(listOf(apps[0], apps[8]), folder.apps)
+
+        // Son kalan Sayfa 2 öğesini aynı klasöre sürükleyip eklediğimizde boşalan Sayfa 2 otomatik silinmeli
+        val mergedSinglePage = HomeLayoutRepository.applyDragDropToState(
+            state = withFolder,
+            source = HomeLayoutRepository.Companion.LayoutDragSource.HomeSlot(
+                pageIndex = 1,
+                slotIndex = 0,
+                expectedItemId = "app:${apps[9].stableId}"
+            ),
+            destination = HomeLayoutRepository.Companion.LayoutDropDestination.MergeIntoFolder(
+                folderId = folder.id
+            ),
+            maxPerPage = 8,
+            maxDockItems = 4
+        )
+        assertEquals(1, mergedSinglePage.pages.size)
+        val updatedFolder = mergedSinglePage.pages[0].items[0] as HomeGridItem.FolderTile
+        assertEquals(listOf(apps[0], apps[8], apps[9]), updatedFolder.apps)
+    }
+
+    @Test
+    fun `turkish search normalizer handles unicode combining dot above, circumflexes, and whitespace queries`() {
+        val emptyPrepared = com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.prepareQuery("   ")
+        assertTrue(emptyPrepared.isEmpty)
+        assertTrue(com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.containsMatch("Herhangi", "  "))
+
+        // Unicode NFD birleştirici nokta (i + \u0307) ve şapkalı harfler (Â, Î, Û)
+        assertTrue(
+            com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.containsMatch("i\u0307ş Bankası", "is bankasi")
+        )
+        assertTrue(
+            com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.startsWithMatch("Kâğıt Notlar", "kagit")
+        )
+        assertTrue(
+            com.hnmlabs.hnmui.core.text.TurkishSearchNormalizer.containsMatch("Sükûnet", "sukunet")
+        )
+    }
+
+    @Test
+    fun `form factor policy clamps out-of-range customization values safely on ultra-compact and large screens`() {
+        val extremeCustom = com.hnmlabs.hnmui.model.LauncherCustomizationSettings(
+            gridColumns = 99,
+            gridRows = 1,
+            folderColumns = 99,
+            folderPreviewColumns = 0,
+            dockMaxItems = 99,
+            dockScalePercent = 250,
+            iconScalePercent = 10,
+            glassOpacityPercent = 5
+        )
+
+        val compactSpec = FormFactorPolicy.resolve(
+            smallestScreenWidthDp = 320,
+            flags = LauncherFeatureFlags(enableTabletLayout = false),
+            customization = extremeCustom
+        )
+        assertEquals(7, compactSpec.columns)
+        assertEquals(4, compactSpec.rows)
+        assertEquals(7, compactSpec.folderExpandedColumns)
+        assertEquals(2, compactSpec.folderPreviewColumns)
+        assertEquals(7, compactSpec.dockMaxItems)
+        assertTrue(compactSpec.iconSizeDp >= 26)
+        assertTrue(compactSpec.dockIconSizeDp >= 26)
+        assertTrue(compactSpec.glassOpacityFactor in 0.45f..1.40f)
+    }
+
     private fun sampleApp(pkg: String, label: String, category: AppCategory): AppItem {
         return AppItem(
             key = AppComponentKey(packageName = pkg, className = "$pkg.MainActivity"),
